@@ -60,12 +60,10 @@ int watdfs_getattr(int *argTypes, void **args) {
     // Initially we set the return code to be 0.
     *ret = 0;
 
-    // TODO: Make the stat system call, which is the corresponding system call needed
+    // TODO: Make the stat system call, which is the corresponding system call needed (done)
     // to support getattr. You should use the statbuf as an argument to the stat system call.
-    (void)statbuf;
-
     // Let sys_ret be the return code from the stat system call.
-    int sys_ret = 0;
+    int sys_ret = stat(full_path, statbuf);
 
     if (sys_ret < 0) {
         // If there is an error on the system call, then the return code should
@@ -131,11 +129,14 @@ int main(int argc, char *argv[]) {
         ret = rpcRegister((char *)"getattr", argTypes, watdfs_getattr);
         if (ret < 0) {
             // It may be useful to have debug-printing here.
+            DLOG("rpcRegister failed with '%d'", ret);
             return ret;
         }
     }
 
     // TODO: Hand over control to the RPC library by calling `rpcExecute`.
+    int rpc_ret = rpcExecute();
+    (void)rpc_ret;
 
     // rpcExecute could fail, so you may want to have debug-printing here, and
     // then you should return.

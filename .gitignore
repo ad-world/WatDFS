@@ -1,0 +1,5 @@
+*.d
+*.o
+watdfs_client
+watdfs_server
+libwatdfs.a
