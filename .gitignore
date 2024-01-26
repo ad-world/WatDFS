@@ -3,3 +3,6 @@
 watdfs_client
 watdfs_server
 libwatdfs.a
+rpc_client.log
+rpc_server.log
+watdfs.log

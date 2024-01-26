@@ -69,6 +69,7 @@ int watdfs_getattr(int *argTypes, void **args) {
         // If there is an error on the system call, then the return code should
         // be -errno.
         *ret = -errno;
+        DLOG("getattr failed with code '%d'", *ret);
     }
 
     // Clean up the full path, it was allocated on the heap.
@@ -95,6 +96,13 @@ int main(int argc, char *argv[]) {
     }
     // Store the directory in a global variable.
     server_persist_dir = argv[1];
+
+    int setup_code = rpcServerInit();
+
+    if (setup_code < 0) {
+        DLOG("rpcServerInit failed with '%d'", setup_code);
+        return setup_code;
+    }
 
     // TODO: Initialize the rpc library by calling `rpcServerInit`.
     // Important: `rpcServerInit` prints the 'export SERVER_ADDRESS' and

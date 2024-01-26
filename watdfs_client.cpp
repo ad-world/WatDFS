@@ -5,6 +5,7 @@
 
 #include "watdfs_client.h"
 #include "debug.h"
+#include <iostream>
 INIT_LOG
 
 #include "rpc.h"
@@ -17,11 +18,9 @@ void *watdfs_cli_init(struct fuse_conn_info *conn, const char *path_to_cache,
     // TODO: check the return code of the `rpcClientInit` call
     // `rpcClientInit` may fail, for example, if an incorrect port was exported.
     DLOG("watdfs_cli_init called");
-    #ifdef PRINT_ERR
     if (ret != 0) {
         std::cerr << "Failed to initialize RPC Client" << std::endl;
     }
-    #endif
 
     // It may be useful to print to stderr or stdout during debugging.
     // Important: Make sure you turn off logging prior to submission!
@@ -41,7 +40,7 @@ void *watdfs_cli_init(struct fuse_conn_info *conn, const char *path_to_cache,
     // TODO: set `ret_code` to 0 if everything above succeeded else some appropriate
     // non-zero value.
 
-    *ret_code = 0;
+    *ret_code = ret;
 
     // Return pointer to global state data.
     return userdata;
@@ -93,13 +92,15 @@ int watdfs_cli_getattr(void *userdata, const char *path, struct stat *statbuf) {
     // The int* could be the address of an integer located on the stack, or use
     // a heap allocated integer, in which case it should be freed.
     // TODO: Fill in the argument
-
+    arg_types[2] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
+    int rpc_ret = 0;
+    args[2] = (void* )&rpc_ret;
     // Finally, the last position of the arg types is 0. There is no
     // corresponding arg.
     arg_types[3] = 0;
 
     // MAKE THE RPC CALL
-    int rpc_ret = rpcCall((char *)"getattr", arg_types, args);
+    rpc_ret = rpcCall((char *)"getattr", arg_types, args);
 
     // HANDLE THE RETURN
     // The integer value watdfs_cli_getattr will return.
@@ -115,7 +116,7 @@ int watdfs_cli_getattr(void *userdata, const char *path, struct stat *statbuf) {
         // should set our function return value to the retcode from the server.
 
         // TODO: set the function return value to the return code from the server.
-        args[2] = (void* )rpc_ret;
+        fxn_ret = rpc_ret;
     }
 
     if (fxn_ret < 0) {
