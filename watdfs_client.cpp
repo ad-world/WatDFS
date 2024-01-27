@@ -136,8 +136,75 @@ int watdfs_cli_getattr(void *userdata, const char *path, struct stat *statbuf) {
 // CREATE, OPEN AND CLOSE
 int watdfs_cli_mknod(void *userdata, const char *path, mode_t mode, dev_t dev) {
     // Called to create a file.
-    return -ENOSYS;
+    DLOG("watdfs_cli_mknod called for '%s'", path);
+
+    // Four arguments: path, mode, dev, retcode
+    int ARG_COUNT = 4;
+
+    // Create void pointer array for the arguments
+    void **args = new void*[ARG_COUNT];
+
+    // Create int array for argument types
+    int arg_types[ARG_COUNT + 1];
+
+    // pathlen + 1 for null terminator
+    int pathlen = strlen(path) + 1;
+
+    // Set type of first argument to input, array, and char
+    arg_types[0] =
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint) pathlen;
+    // For arrays the argument is the array pointer, not a pointer to a pointer.
+    args[0] = (void *)path;
+
+    // Second argument is mode, and mode is an input with type int.
+    arg_types[1] = (1u << ARG_INPUT) | (ARG_INT << 16u);
+
+    // Set second argument to mode
+    args[1] = (void *) &mode;
+
+    // Thid argument is dev, and dev is an input with type long
+    arg_types[2] = (1u << ARG_INPUT) | (ARG_LONG << 16u);
+
+    // Set third argument to dev 
+    args[2] = (void* ) &dev;
+
+    // The rpc return value
+    int rpc_ret = 0;
+
+    // The last argument is the rpc return output value
+    arg_types[3] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
+
+    // The address of the rpc ret value
+    args[2] = (void* )&rpc_ret;
+
+    arg_types[4] = 0;
+
+    // Setting the rpc_ret value
+    rpc_ret = rpcCall((char *)"mknod", arg_types, args);
+
+    int fxn_ret = 0;
+    if (rpc_ret < 0) {
+        DLOG("mknod rpc failed with error '%d'", rpc_ret);
+        // Something went wrong with the rpcCall, return a sensible return
+        // value. In this case lets return, -EINVAL
+        fxn_ret = -EINVAL;
+    } else {
+        // Our RPC call succeeded. However, it's possible that the return code
+        // from the server is not 0, that is it may be -errno. Therefore, we
+        // should set our function return value to the retcode from the server.
+
+        // TODO: set the function return value to the return code from the server.
+        fxn_ret = rpc_ret;
+    }
+
+    // Clean up the memory we have allocated.
+    delete []args;
+
+    // Finally return the value we got from the server.
+    return fxn_ret;
 }
+
+
 int watdfs_cli_open(void *userdata, const char *path,
                     struct fuse_file_info *fi) {
     // Called during open.

@@ -80,6 +80,43 @@ int watdfs_getattr(int *argTypes, void **args) {
     return 0;
 }
 
+int watdfs_mknod(int *argTypes, void** args) {
+    // Unpack short path
+    char *short_path = (char*)args[0];
+
+    // Unpack mode
+    mode_t* mode = (mode_t*) args[1];
+
+    // Unpack dev
+    dev_t* dev = (dev_t*) args[2];
+
+    // Unpack return value
+    int *ret = (int *)args[3];
+
+    // Set ret to 0 intially
+    *ret = 0;
+
+    // Get full path
+    char *full_path = get_full_path(short_path);
+
+    // Call the mknod syscall
+    int sys_ret = mknod(full_path, *mode, *dev);
+
+    // If we found an error, update return code
+    if (sys_ret < 0) {
+        *ret = -errno;
+        DLOG("mknod failde with code '%d'", *ret);
+    } else {
+        *ret = sys_ret;
+    }
+
+    free(full_path);
+
+    return 0;
+
+}
+
+
 // The main function of the server.
 int main(int argc, char *argv[]) {
     // argv[1] should contain the directory where you should store data on the
