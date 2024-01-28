@@ -13,6 +13,7 @@ INIT_LOG
 #include <errno.h>
 #include <cstring>
 #include <cstdlib>
+#include <fuse.h>
 
 // Global state server_persist_dir.
 char *server_persist_dir = nullptr;
@@ -105,7 +106,7 @@ int watdfs_mknod(int *argTypes, void** args) {
     // If we found an error, update return code
     if (sys_ret < 0) {
         *ret = -errno;
-        DLOG("mknod failde with code '%d'", *ret);
+        DLOG("mknod failed with code '%d'", *ret);
     } else {
         *ret = sys_ret;
     }
@@ -113,7 +114,39 @@ int watdfs_mknod(int *argTypes, void** args) {
     free(full_path);
 
     return 0;
+}
 
+int watdfs_open(int *argTypes, void **args) {
+    // Unpack short path
+    char *short_path = (char*)args[0];
+
+    // Unpack file info
+    struct fuse_file_info *fi = (struct fuse_file_info*)args[1];
+
+    // Unpack return value
+    int *ret = (int*)args[2];
+
+    *ret = 0;
+
+    // Get full path
+    char *full_path = get_full_path(short_path);
+
+    // Open file
+    int sys_ret = open(full_path, fi->flags);
+
+    if(sys_ret < 0) {
+        *ret = -errno;
+        DLOG("open failde with code '%d'", *ret);
+    } else {
+        // Set file handle
+        fi->fh = sys_ret;
+        *ret = 0;
+    }
+
+    // Free full path
+    free(full_path);
+
+    return 0;
 }
 
 
@@ -174,7 +207,57 @@ int main(int argc, char *argv[]) {
         ret = rpcRegister((char *)"getattr", argTypes, watdfs_getattr);
         if (ret < 0) {
             // It may be useful to have debug-printing here.
-            DLOG("rpcRegister failed with '%d'", ret);
+            DLOG("rpcRegister failed to register getattr with '%d'", ret);
+            return ret;
+        }
+    }
+
+    {   
+        // mknod argTypes
+        int argTypes[5];
+
+        // First argument is path
+        argTypes[0] =
+            (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | 1u;
+        // Second argument is mode
+        argTypes[1] = (1u << ARG_INPUT) | (ARG_INT << 16u);
+
+        // Third argument is dev
+        argTypes[2] = (1u << ARG_INPUT) | (ARG_LONG << 16u);
+
+        // Fourth argument is return
+        argTypes[3] = (1u << ARG_OUTPUT)  | (ARG_INT << 16u);
+
+        argTypes[4] = 0;
+
+        // Register function types and name
+        ret = rpcRegister((char *)"mknod", argTypes, watdfs_mknod);
+        if (ret < 0) {
+            DLOG("rpcRegister failed to register mknod with '%d'", ret);
+            return ret;
+        }
+    }
+
+    {
+        // open argTypes
+        int argTypes[4];
+
+        // First is the path.
+        argTypes[0] =
+            (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | 1u;
+        // The second argument is the file info.
+        argTypes[1] =
+            (1u << ARG_INPUT) | (1u << ARG_OUTPUT) | (1u << ARG_ARRAY)| (ARG_CHAR << 16u);
+        // The third argument is the retcode.
+        argTypes[2] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
+        // Finally we fill in the null terminator.
+        argTypes[3] = 0;
+
+        // We need to register the function with the types and the name.
+        ret = rpcRegister((char *)"open", argTypes, watdfs_open);
+        if (ret < 0) {
+            // It may be useful to have debug-printing here.
+            DLOG("rpcRegister failed to register open with '%d'", ret);
             return ret;
         }
     }
