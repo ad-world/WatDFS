@@ -175,7 +175,7 @@ int watdfs_cli_mknod(void *userdata, const char *path, mode_t mode, dev_t dev) {
     arg_types[3] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
 
     // The address of the rpc ret value
-    args[2] = (void* )&rpc_ret;
+    args[3] = (void* )&rpc_ret;
 
     arg_types[4] = 0;
 
@@ -209,13 +209,122 @@ int watdfs_cli_open(void *userdata, const char *path,
                     struct fuse_file_info *fi) {
     // Called during open.
     // You should fill in fi->fh.
-    return -ENOSYS;
+    
+    // Declaring arg count
+    int ARG_COUNT = 3;
+
+    // Arg array
+    void **args = new void*[ARG_COUNT];
+
+    // Create int array for argument types
+    int arg_types[ARG_COUNT + 1];
+
+    // pathlen + 1 for null terminator
+    int pathlen = strlen(path) + 1;
+
+    // Set type of first argument to input, array, and char
+    arg_types[0] =
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint) pathlen;
+    // For arrays the argument is the array pointer, not a pointer to a pointer.
+    args[0] = (void *)path;
+
+    // Setting second argument to input, output, array, and char
+    arg_types[1] = 
+        (1u << ARG_INPUT) | (1u << ARG_OUTPUT) | (1u << ARG_ARRAY)| (ARG_CHAR << 16u);
+
+    // Setting first argument to file handler
+    args[1] = (void* )fi;
+
+    int rpc_ret = 0;
+
+    arg_types[2] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
+
+    args[2] = (void *) &rpc_ret;
+
+    arg_types[3] = 0;
+
+    rpc_ret = rpcCall((char* )"open", arg_types, args);
+
+    int fxn_ret = 0;
+    if (rpc_ret < 0) {
+        DLOG("open rpc failed with error '%d'", rpc_ret);
+        // Something went wrong with the rpcCall, return a sensible return
+        // value. In this case lets return, -EINVAL
+        fxn_ret = -EINVAL;
+    } else {
+        // Our RPC call succeeded. However, it's possible that the return code
+        // from the server is not 0, that is it may be -errno. Therefore, we
+        // should set our function return value to the retcode from the server.
+
+        // TODO: set the function return value to the return code from the server.
+        fxn_ret = rpc_ret;
+    }
+
+    // Clean up the memory we have allocated.
+    delete []args;
+
+    // Finally return the value we got from the server.
+    return fxn_ret;
 }
 
 int watdfs_cli_release(void *userdata, const char *path,
                        struct fuse_file_info *fi) {
     // Called during close, but possibly asynchronously.
-    return -ENOSYS;
+     // Declaring arg count
+    int ARG_COUNT = 3;
+
+    // Arg array
+    void **args = new void*[ARG_COUNT];
+
+    // Create int array for argument types
+    int arg_types[ARG_COUNT + 1];
+
+    // pathlen + 1 for null terminator
+    int pathlen = strlen(path) + 1;
+
+    // Set type of first argument to input, array, and char
+    arg_types[0] =
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint) pathlen;
+    // For arrays the argument is the array pointer, not a pointer to a pointer.
+    args[0] = (void *)path;
+
+    // Setting second argument to input, output, array, and char
+    arg_types[1] = 
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY)| (ARG_CHAR << 16u);
+
+    // Setting first argument to file handler
+    args[1] = (void* )fi;
+
+    int rpc_ret = 0;
+
+    arg_types[2] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
+
+    args[2] = (void *) &rpc_ret;
+
+    arg_types[3] = 0;
+
+    rpc_ret = rpcCall((char* )"release", arg_types, args);
+
+    int fxn_ret = 0;
+    if (rpc_ret < 0) {
+        DLOG("release rpc failed with error '%d'", rpc_ret);
+        // Something went wrong with the rpcCall, return a sensible return
+        // value. In this case lets return, -EINVAL
+        fxn_ret = -EINVAL;
+    } else {
+        // Our RPC call succeeded. However, it's possible that the return code
+        // from the server is not 0, that is it may be -errno. Therefore, we
+        // should set our function return value to the retcode from the server.
+
+        // TODO: set the function return value to the return code from the server.
+        fxn_ret = rpc_ret;
+    }
+
+    // Clean up the memory we have allocated.
+    delete []args;
+
+    // Finally return the value we got from the server.
+    return fxn_ret;
 }
 
 // READ AND WRITE DATA
