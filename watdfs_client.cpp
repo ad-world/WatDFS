@@ -270,7 +270,7 @@ int watdfs_cli_open(void *userdata, const char *path,
 int watdfs_cli_release(void *userdata, const char *path,
                        struct fuse_file_info *fi) {
     // Called during close, but possibly asynchronously.
-     // Declaring arg count
+    // Declaring arg count
     int ARG_COUNT = 3;
 
     // Arg array
@@ -352,12 +352,120 @@ int watdfs_cli_truncate(void *userdata, const char *path, off_t newsize) {
 int watdfs_cli_fsync(void *userdata, const char *path,
                      struct fuse_file_info *fi) {
     // Force a flush of file data.
-    return -ENOSYS;
+    // Declaring arg count
+    int ARG_COUNT = 3;
+
+    // Arg array
+    void **args = new void*[ARG_COUNT];
+
+    // Create int array for argument types
+    int arg_types[ARG_COUNT + 1];
+
+    // pathlen + 1 for null terminator
+    int pathlen = strlen(path) + 1;
+
+    // Set type of first argument to input, array, and char
+    arg_types[0] =
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint) pathlen;
+    // For arrays the argument is the array pointer, not a pointer to a pointer.
+    args[0] = (void *)path;
+
+    // Setting second argument to input, output, array, and char
+    arg_types[1] = 
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY)| (ARG_CHAR << 16u);
+
+    // Setting first argument to file handler
+    args[1] = (void* )fi;
+
+    int rpc_ret = 0;
+
+    arg_types[2] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
+
+    args[2] = (void *) &rpc_ret;
+
+    arg_types[3] = 0;
+
+    rpc_ret = rpcCall((char* )"fsync", arg_types, args);
+
+    int fxn_ret = 0;
+    if (rpc_ret < 0) {
+        DLOG("fsync rpc failed with error '%d'", rpc_ret);
+        // Something went wrong with the rpcCall, return a sensible return
+        // value. In this case lets return, -EINVAL
+        fxn_ret = -EINVAL;
+    } else {
+        // Our RPC call succeeded. However, it's possible that the return code
+        // from the server is not 0, that is it may be -errno. Therefore, we
+        // should set our function return value to the retcode from the server.
+
+        // TODO: set the function return value to the return code from the server.
+        fxn_ret = rpc_ret;
+    }
+
+    // Clean up the memory we have allocated.
+    delete []args;
+
+    // Finally return the value we got from the server.
+    return fxn_ret;
 }
 
 // CHANGE METADATA
 int watdfs_cli_utimensat(void *userdata, const char *path,
                        const struct timespec ts[2]) {
-    // Change file access and modification times.
-    return -ENOSYS;
+    // Called during close, but possibly asynchronously.
+    // Declaring arg count
+    int ARG_COUNT = 3;
+
+    // Arg array
+    void **args = new void*[ARG_COUNT];
+
+    // Create int array for argument types
+    int arg_types[ARG_COUNT + 1];
+
+    // pathlen + 1 for null terminator
+    int pathlen = strlen(path) + 1;
+
+    // Set type of first argument to input, array, and char
+    arg_types[0] =
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint) pathlen;
+    // For arrays the argument is the array pointer, not a pointer to a pointer.
+    args[0] = (void *)path;
+
+    // Setting second argument to input, array, and char
+    arg_types[1] = 
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY)| (ARG_CHAR << 16u);
+
+    // Setting first argument to file handler
+    args[1] = (void* )ts;
+
+    int rpc_ret = 0;
+
+    arg_types[2] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
+
+    args[2] = (void *) &rpc_ret;
+
+    arg_types[3] = 0;
+
+    rpc_ret = rpcCall((char* )"utimenstat", arg_types, args);
+
+    int fxn_ret = 0;
+    if (rpc_ret < 0) {
+        DLOG("utimenstat rpc failed with error '%d'", rpc_ret);
+        // Something went wrong with the rpcCall, return a sensible return
+        // value. In this case lets return, -EINVAL
+        fxn_ret = -EINVAL;
+    } else {
+        // Our RPC call succeeded. However, it's possible that the return code
+        // from the server is not 0, that is it may be -errno. Therefore, we
+        // should set our function return value to the retcode from the server.
+
+        // TODO: set the function return value to the return code from the server.
+        fxn_ret = rpc_ret;
+    }
+
+    // Clean up the memory we have allocated.
+    delete []args;
+
+    // Finally return the value we got from the server.
+    return fxn_ret;
 }

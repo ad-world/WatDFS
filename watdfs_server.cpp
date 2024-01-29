@@ -136,7 +136,7 @@ int watdfs_open(int *argTypes, void **args) {
 
     if(sys_ret < 0) {
         *ret = -errno;
-        DLOG("open failde with code '%d'", *ret);
+        DLOG("open failed with code '%d'", *ret);
     } else {
         // Set file handle
         fi->fh = sys_ret;
@@ -144,6 +144,92 @@ int watdfs_open(int *argTypes, void **args) {
     }
 
     // Free full path
+    free(full_path);
+
+    return 0;
+}
+
+int watdfs_release(int *argTypes, void** args) {
+    // Unpack short path
+    char *short_path = (char*)args[0];
+
+    // Unpack fuze file info
+    struct fuse_file_info *fi = (struct fuse_file_info*)args[1];
+
+    // Unpack return code
+    int *ret = (int*)args[2];
+
+    *ret = 0;
+
+    // Get full path
+    char *full_path = get_full_path(short_path);
+
+    int sys_ret = close(fi->fh);
+
+    if (sys_ret < 0) {
+        *ret = -errno;
+        DLOG("close failed with code '%d'", *ret);
+    } else {
+        *ret = sys_ret;
+    }
+
+    free(full_path);
+    return 0;
+}
+
+int watdfs_fsync(int *argTypes, void **args) {
+    // Unpack short path
+    char *short_path = (char*) args[0];
+
+    // Unpack fuse file info
+    struct fuse_file_info *fi = (struct fuse_file_info*)args[1];
+
+    // Unpack return code;
+    int *ret = (int* )args[2];
+
+    *ret = 0;
+
+    char* full_path = get_full_path(short_path);
+
+    // Make fsync syscall
+    int sys_ret = fsync(fi->fh);
+
+    if (sys_ret < 0) {
+        *ret = -errno;
+        DLOG("fsync failed with code '%d'", sys_ret);
+    } else {
+        *ret = sys_ret;
+    }
+
+    free(full_path);
+
+    return 0;
+}
+
+int watdfs_utimensat(int* argTypes, void **args) {
+    // Unpack short path
+    char *short_path = (char*) args[0];
+
+    // Unpack fuse file info
+    struct timespec* ts = (struct timespec*)args[1];
+
+    // Unpack return code;
+    int *ret = (int* )args[2];
+
+    *ret = 0;
+
+    char *full_path = get_full_path(short_path);
+
+    // Make fsync syscall
+    int sys_ret = utimensat(0, full_path, ts, 0);
+
+    if (sys_ret < 0) {
+        *ret = -errno;
+        DLOG("utimensat failed with code '%d'", sys_ret);
+    } else {
+        *ret = sys_ret;
+    }
+
     free(full_path);
 
     return 0;
@@ -188,6 +274,8 @@ int main(int argc, char *argv[]) {
     // Note: The braces are used to limit the scope of `argTypes`, so that you can
     // reuse the variable for multiple registrations. Another way could be to
     // remove the braces and use `argTypes0`, `argTypes1`, etc.
+
+    /* getattr registration */
     {
         // There are 3 args for the function (see watdfs_client.cpp for more
         // detail).
@@ -212,6 +300,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    /* mknod registration */
     {   
         // mknod argTypes
         int argTypes[5];
@@ -238,6 +327,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    /* open registration */
     {
         // open argTypes
         int argTypes[4];
@@ -259,6 +349,70 @@ int main(int argc, char *argv[]) {
             // It may be useful to have debug-printing here.
             DLOG("rpcRegister failed to register open with '%d'", ret);
             return ret;
+        }
+    }
+
+    /* release registration */
+    {
+        // release argTypes
+        int argTypes[4];
+
+        // First is the path.
+        argTypes[0] =
+            (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | 1u;
+        // The second argument is the file info.
+        argTypes[1] =
+            (1u << ARG_INPUT) | (1u << ARG_ARRAY)| (ARG_CHAR << 16u);
+        // The third argument is the retcode.
+        argTypes[2] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
+        // Finally we fill in the null terminator.
+        argTypes[3] = 0;
+
+        ret = rpcRegister((char* )"release", argTypes, watdfs_release);
+        if (ret < 0) {
+            DLOG("rpcRegister failed to register release with '%d'", ret);
+        }
+    }
+
+    /* fsync registration */ 
+    {
+        int argTypes[4];
+
+        // First is path
+        argTypes[0] =
+            (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | 1u;
+        // Second is file info
+        argTypes[1] =
+            (1u << ARG_INPUT) | (1u << ARG_ARRAY)| (ARG_CHAR << 16u);
+        // Third is retcode
+        argTypes[2] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
+        // Finally we fill in the null terminator.
+        argTypes[3] = 0;
+
+        ret = rpcRegister((char* )"fsync", argTypes, watdfs_fsync);
+        if(ret < 0) {
+            DLOG("rpcRegister failed to register fsync with '%d'", ret);
+        }
+    }
+
+    /* utimensat registration */
+    {
+        int argTypes[4];
+
+        // First is path
+        argTypes[0] =
+            (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | 1u;
+        // Setting second argument to input, array, and char
+        argTypes[1] = (1u << ARG_INPUT) | (1u << ARG_ARRAY)| (ARG_CHAR << 16u);
+        
+        // Last arg is return
+        argTypes[2] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
+
+        argTypes[3] = 0;
+
+        ret = rpcRegister((char *)"utimenstat", argTypes, watdfs_utimensat);
+        if(ret < 0) {
+            DLOG("rpcRegister failed to register utimenstat with '%d'", ret);
         }
     }
 
