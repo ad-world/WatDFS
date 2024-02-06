@@ -263,7 +263,36 @@ int watdfs_read(int* argTypes, void** args)  {
     }
 
     free(full_path);
-    return *ret;
+    return 0;
+}
+
+int watdfs_write(int *argTypes, void**args) {
+     // Unpack short path
+    char *short_path = (char*)args[0];
+    // Unpack buffer pointer
+    char *buf = (char*)args[1];
+    // Unpack size
+    size_t *size = (size_t*)args[2];
+    // Unpack offset 
+    off_t *off = (off_t*)args[3];
+    // Unpack file handler
+    fuse_file_info *fi = (struct fuse_file_info*)args[4];
+    // Unpack return code
+    int *ret = (int*) args[5];
+
+    char *full_path = get_full_path(short_path);
+    *ret = 0;
+
+    int sys_ret = pwrite(fi->fh, buf, *size, *off);
+
+    if (sys_ret < 0) {
+        *ret = -errno;
+        DLOG("write failed with code '%d'", sys_ret);
+    } else {
+        *ret = sys_ret;
+    }
+    free(full_path);
+    return 0;
 }
 
 
@@ -473,7 +502,35 @@ int main(int argc, char *argv[]) {
         if(ret < 0) {
             DLOG("rpcRegister failed to register read with '%d'", ret);
         }
-    }
+    } 
+    
+    /* Write registration */
+    {
+        int argTypes[7];
+
+        argTypes[0] =
+            (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | 1u;
+            // Buffer type and size
+        argTypes[1] = 
+            (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | 1u;
+            // Size type
+        argTypes[2] = 
+            (1u << ARG_INPUT) | (ARG_LONG << 16u);
+            // Offset type
+        argTypes[3] = 
+            (1u << ARG_INPUT) | (ARG_LONG << 16u);
+        // File handler type 
+        argTypes[4] =
+            (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | 1u;
+        // Return code type
+        argTypes[5] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
+        argTypes[6] = 0;
+
+        ret = rpcRegister((char* )"write", argTypes, watdfs_write);
+        if(ret < 0) {
+            DLOG("rpcRegister failed to register write with '%d'", ret);
+        }
+    } 
 
     // TODO: Hand over control to the RPC library by calling `rpcExecute`.
     int rpc_ret = rpcExecute();

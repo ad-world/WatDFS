@@ -398,8 +398,8 @@ int watdfs_cli_read(void *userdata, const char *path, char *buf, size_t size,
         buf = buf + func_ret;
         remaining_bytes = remaining_bytes - max_buffer_size;
         fxn_ret = fxn_ret + func_ret;
-
     }
+
     max_buffer_size = remaining_bytes;
     // At this point, there still may be some remaining bytes
     // Buffer size may have changed
@@ -434,10 +434,98 @@ int watdfs_cli_read(void *userdata, const char *path, char *buf, size_t size,
 int watdfs_cli_write(void *userdata, const char *path, const char *buf,
                      size_t size, off_t offset, struct fuse_file_info *fi) {
     // Write size amount of data at offset of file from buf.
-
+    size_t remaining_bytes = size;
+    size_t max_buffer_size = MAX_ARRAY_LEN;
+    int func_ret = 0;
+    off_t off = offset;
     // Remember that size may be greater than the maximum array size of the RPC
     // library.
-    return -ENOSYS;
+    int fxn_ret = 0;
+    int ARG_COUNT = 6;
+    int arg_types[ARG_COUNT + 1];
+    int pathlen = strlen(path) + 1;
+    
+      // Set type of first argument to input, array, and char
+    arg_types[0] =
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint) pathlen;
+    arg_types[1] = 
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint) max_buffer_size;
+    arg_types[2] = 
+        (1u << ARG_INPUT) | (ARG_LONG << 16u);
+    // Offset type
+    arg_types[3] = 
+        (1u << ARG_INPUT) | (ARG_LONG << 16u);
+    // File handler type 
+    arg_types[4] =
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint)sizeof(struct fuse_file_info);
+        // Return code type
+    arg_types[5] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
+    arg_types[6] = 0;
+
+    while (remaining_bytes > max_buffer_size) {
+ void **args = new void*[ARG_COUNT];
+        // Path pointer        
+        args[0] = (void *)path;
+        // Buffer pointer
+        args[1] = (void *)buf;
+        // Size pointer
+        args[2] = (void* )&max_buffer_size;
+        // Offset pointer
+        args[3] = (void* )&off;
+        // File handler pointer
+        args[4] = (void* )fi;
+        // Return code pointer
+        args[5] = (void* )&func_ret;
+
+        int rpc_ret = rpcCall((char* )"write", arg_types, args);
+
+        delete[] args;
+
+        if (rpc_ret < 0) {
+            fxn_ret = -EINVAL;
+            return fxn_ret;
+        } else {
+            if (func_ret < 0) {
+                return fxn_ret;
+            }
+        }
+
+        off = off + func_ret;
+        buf = buf + func_ret;
+        remaining_bytes = remaining_bytes - max_buffer_size;
+        fxn_ret = fxn_ret + func_ret;
+    }
+
+    max_buffer_size = remaining_bytes;
+    // At this point, there still may be some remaining bytes
+    // Buffer size may have changed
+    arg_types[1] = 
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint) max_buffer_size;
+    void **args = new void*[ARG_COUNT];
+    // Path pointer        
+    args[0] = (void *)path;
+    // Buffer pointer
+    args[1] = (void *)buf;
+    // Size pointer
+    args[2] = (void* )&max_buffer_size;
+    // Offset pointer
+    args[3] = (void* )&off;
+    // File handler pointer
+    args[4] = (void* )fi;
+    // Return code pointer
+    args[5] = (void* )&func_ret;
+
+    int rpc_ret = rpcCall((char* )"read", arg_types, args);
+
+    if (rpc_ret < 0) {
+        fxn_ret = -EINVAL;
+    } else if (func_ret < 0) {
+        fxn_ret = func_ret;
+    } else {
+        fxn_ret += func_ret;
+    }
+
+    return fxn_ret;
 }
 int watdfs_cli_truncate(void *userdata, const char *path, off_t newsize) {
     // Change the file size to newsize.
