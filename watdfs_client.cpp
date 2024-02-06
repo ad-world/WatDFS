@@ -94,7 +94,8 @@ int watdfs_cli_getattr(void *userdata, const char *path, struct stat *statbuf) {
     // TODO: Fill in the argument
     arg_types[2] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
     int rpc_ret = 0;
-    args[2] = (void* )&rpc_ret;
+    int func_ret = 0;
+    args[2] = (void* )&func_ret;
     // Finally, the last position of the arg types is 0. There is no
     // corresponding arg.
     arg_types[3] = 0;
@@ -116,7 +117,7 @@ int watdfs_cli_getattr(void *userdata, const char *path, struct stat *statbuf) {
         // should set our function return value to the retcode from the server.
 
         // TODO: set the function return value to the return code from the server.
-        fxn_ret = rpc_ret;
+        fxn_ret = func_ret;
     }
 
     if (fxn_ret < 0) {
@@ -170,12 +171,13 @@ int watdfs_cli_mknod(void *userdata, const char *path, mode_t mode, dev_t dev) {
 
     // The rpc return value
     int rpc_ret = 0;
+    int func_ret = 0;
 
     // The last argument is the rpc return output value
     arg_types[3] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
 
     // The address of the rpc ret value
-    args[3] = (void* )&rpc_ret;
+    args[3] = (void* )&func_ret;
 
     arg_types[4] = 0;
 
@@ -194,7 +196,7 @@ int watdfs_cli_mknod(void *userdata, const char *path, mode_t mode, dev_t dev) {
         // should set our function return value to the retcode from the server.
 
         // TODO: set the function return value to the return code from the server.
-        fxn_ret = rpc_ret;
+        fxn_ret = func_ret;
     }
 
     // Clean up the memory we have allocated.
@@ -236,10 +238,10 @@ int watdfs_cli_open(void *userdata, const char *path,
     args[1] = (void* )fi;
 
     int rpc_ret = 0;
-
+    int func_ret = 0;
     arg_types[2] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
 
-    args[2] = (void *) &rpc_ret;
+    args[2] = (void *) &func_ret;
 
     arg_types[3] = 0;
 
@@ -257,7 +259,7 @@ int watdfs_cli_open(void *userdata, const char *path,
         // should set our function return value to the retcode from the server.
 
         // TODO: set the function return value to the return code from the server.
-        fxn_ret = rpc_ret;
+        fxn_ret = func_ret;
     }
 
     // Clean up the memory we have allocated.
@@ -296,10 +298,11 @@ int watdfs_cli_release(void *userdata, const char *path,
     args[1] = (void* )fi;
 
     int rpc_ret = 0;
+    int func_ret = 0;
 
     arg_types[2] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
 
-    args[2] = (void *) &rpc_ret;
+    args[2] = (void *) &func_ret;
 
     arg_types[3] = 0;
 
@@ -317,7 +320,7 @@ int watdfs_cli_release(void *userdata, const char *path,
         // should set our function return value to the retcode from the server.
 
         // TODO: set the function return value to the return code from the server.
-        fxn_ret = rpc_ret;
+        fxn_ret = func_ret;
     }
 
     // Clean up the memory we have allocated.
@@ -331,10 +334,102 @@ int watdfs_cli_release(void *userdata, const char *path,
 int watdfs_cli_read(void *userdata, const char *path, char *buf, size_t size,
                     off_t offset, struct fuse_file_info *fi) {
     // Read size amount of data at offset of file into buf.
-
+    size_t remaining_bytes = size;
+    size_t max_buffer_size = MAX_ARRAY_LEN;
+    off_t off = offset;
     // Remember that size may be greater than the maximum array size of the RPC
     // library.
-    return -ENOSYS;
+
+    int func_ret = 0;
+    int ARG_COUNT = 6;
+    int arg_types[ARG_COUNT + 1];
+    int pathlen = strlen(path) + 1;
+
+    int fxn_ret = 0;
+    
+    // Set type of first argument to input, array, and char
+    arg_types[0] =
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint) pathlen;
+            // Buffer type and size
+    arg_types[1] = 
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint) max_buffer_size;
+            // Size type
+    arg_types[2] = 
+        (1u << ARG_INPUT) | (ARG_LONG << 16u);
+            // Offset type
+    arg_types[3] = 
+        (1u << ARG_INPUT) | (ARG_LONG << 16u);
+        // File handler type 
+    arg_types[4] =
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint)sizeof(struct fuse_file_info);
+        // Return code type
+    arg_types[5] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
+    arg_types[6] = 0;
+
+    while (remaining_bytes > max_buffer_size) {
+        void **args = new void*[ARG_COUNT];
+        // Path pointer        
+        args[0] = (void *)path;
+        // Buffer pointer
+        args[1] = (void *)buf;
+        // Size pointer
+        args[2] = (void* )&max_buffer_size;
+        // Offset pointer
+        args[3] = (void* )&off;
+        // File handler pointer
+        args[4] = (void* )fi;
+        // Return code pointer
+        args[5] = (void* )&func_ret;
+
+        int rpc_ret = rpcCall((char* )"read", arg_types, args);
+
+        delete[] args;
+
+        if (rpc_ret < 0) {
+            fxn_ret = -EINVAL;
+            return fxn_ret;
+        } else {
+            if (func_ret < 0) {
+                return fxn_ret;
+            }
+        }
+
+        off = off + func_ret;
+        buf = buf + func_ret;
+        remaining_bytes = remaining_bytes - max_buffer_size;
+        fxn_ret = fxn_ret + func_ret;
+
+    }
+    max_buffer_size = remaining_bytes;
+    // At this point, there still may be some remaining bytes
+    // Buffer size may have changed
+    arg_types[1] = 
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint) max_buffer_size;
+    void **args = new void*[ARG_COUNT];
+    // Path pointer        
+    args[0] = (void *)path;
+    // Buffer pointer
+    args[1] = (void *)buf;
+    // Size pointer
+    args[2] = (void* )&max_buffer_size;
+    // Offset pointer
+    args[3] = (void* )&off;
+    // File handler pointer
+    args[4] = (void* )fi;
+    // Return code pointer
+    args[5] = (void* )&func_ret;
+
+    int rpc_ret = rpcCall((char* )"read", arg_types, args);
+
+    if (rpc_ret < 0) {
+        fxn_ret = -EINVAL;
+    } else if (func_ret < 0) {
+        fxn_ret = func_ret;
+    } else {
+        fxn_ret += func_ret;
+    }
+
+    return fxn_ret;
 }
 int watdfs_cli_write(void *userdata, const char *path, const char *buf,
                      size_t size, off_t offset, struct fuse_file_info *fi) {

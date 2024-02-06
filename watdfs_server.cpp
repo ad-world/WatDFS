@@ -235,6 +235,37 @@ int watdfs_utimensat(int* argTypes, void **args) {
     return 0;
 }
 
+int watdfs_read(int* argTypes, void** args)  {
+    // Unpack short path
+    char *short_path = (char*)args[0];
+    // Unpack buffer pointer
+    char *buf = (char*)args[1];
+    // Unpack size
+    size_t *size = (size_t*)args[2];
+    // Unpack offset 
+    off_t *off = (off_t*)args[3];
+    // Unpack file handler
+    fuse_file_info *fi = (struct fuse_file_info*)args[4];
+    // Unpack return code
+    int *ret = (int*) args[5];
+
+    // Get full path
+    char *full_path = get_full_path(short_path);
+
+    *ret = 0;
+    int sys_ret = pread(fi->fh, buf, *size, *off);
+
+    if (sys_ret < 0) {
+        *ret = -errno;
+        DLOG("read failed with code '%d'", sys_ret);
+    } else {
+        *ret = sys_ret;
+    }
+
+    free(full_path);
+    return *ret;
+}
+
 
 // The main function of the server.
 int main(int argc, char *argv[]) {
@@ -413,6 +444,34 @@ int main(int argc, char *argv[]) {
         ret = rpcRegister((char *)"utimenstat", argTypes, watdfs_utimensat);
         if(ret < 0) {
             DLOG("rpcRegister failed to register utimenstat with '%d'", ret);
+        }
+    }
+
+    /* Read registration */
+    {
+        int argTypes[7];
+
+        argTypes[0] =
+            (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | 1u;
+            // Buffer type and size
+        argTypes[1] = 
+            (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | 1u;
+            // Size type
+        argTypes[2] = 
+            (1u << ARG_INPUT) | (ARG_LONG << 16u);
+            // Offset type
+        argTypes[3] = 
+            (1u << ARG_INPUT) | (ARG_LONG << 16u);
+        // File handler type 
+        argTypes[4] =
+            (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | 1u;
+        // Return code type
+        argTypes[5] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
+        argTypes[6] = 0;
+
+        ret = rpcRegister((char* )"read", argTypes, watdfs_read);
+        if(ret < 0) {
+            DLOG("rpcRegister failed to register read with '%d'", ret);
         }
     }
 
