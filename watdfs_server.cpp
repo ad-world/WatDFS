@@ -84,25 +84,18 @@ int watdfs_getattr(int *argTypes, void **args) {
 int watdfs_mknod(int *argTypes, void** args) {
     // Unpack short path
     char *short_path = (char*)args[0];
-
     // Unpack mode
     mode_t* mode = (mode_t*) args[1];
-
     // Unpack dev
     dev_t* dev = (dev_t*) args[2];
-
     // Unpack return value
     int *ret = (int *)args[3];
-
     // Set ret to 0 intially
     *ret = 0;
-
     // Get full path
     char *full_path = get_full_path(short_path);
-
     // Call the mknod syscall
     int sys_ret = mknod(full_path, *mode, *dev);
-
     // If we found an error, update return code
     if (sys_ret < 0) {
         *ret = -errno;
@@ -119,10 +112,8 @@ int watdfs_mknod(int *argTypes, void** args) {
 int watdfs_open(int *argTypes, void **args) {
     // Unpack short path
     char *short_path = (char*)args[0];
-
     // Unpack file info
     struct fuse_file_info *fi = (struct fuse_file_info*)args[1];
-
     // Unpack return value
     int *ret = (int*)args[2];
 
@@ -130,10 +121,8 @@ int watdfs_open(int *argTypes, void **args) {
 
     // Get full path
     char *full_path = get_full_path(short_path);
-
     // Open file
     int sys_ret = open(full_path, fi->flags);
-
     if(sys_ret < 0) {
         *ret = -errno;
         DLOG("open failed with code '%d'", *ret);
@@ -152,10 +141,8 @@ int watdfs_open(int *argTypes, void **args) {
 int watdfs_release(int *argTypes, void** args) {
     // Unpack short path
     char *short_path = (char*)args[0];
-
     // Unpack fuze file info
     struct fuse_file_info *fi = (struct fuse_file_info*)args[1];
-
     // Unpack return code
     int *ret = (int*)args[2];
 
@@ -180,17 +167,14 @@ int watdfs_release(int *argTypes, void** args) {
 int watdfs_fsync(int *argTypes, void **args) {
     // Unpack short path
     char *short_path = (char*) args[0];
-
     // Unpack fuse file info
     struct fuse_file_info *fi = (struct fuse_file_info*)args[1];
-
     // Unpack return code;
     int *ret = (int* )args[2];
 
     *ret = 0;
 
     char* full_path = get_full_path(short_path);
-
     // Make fsync syscall
     int sys_ret = fsync(fi->fh);
 
@@ -208,18 +192,14 @@ int watdfs_fsync(int *argTypes, void **args) {
 
 int watdfs_utimensat(int* argTypes, void **args) {
     // Unpack short path
-    char *short_path = (char*) args[0];
-
+    char *short_path = (char*) args[0];\
     // Unpack fuse file info
     struct timespec* ts = (struct timespec*)args[1];
-
     // Unpack return code;
     int *ret = (int* )args[2];
-
     *ret = 0;
 
     char *full_path = get_full_path(short_path);
-
     // Make fsync syscall
     int sys_ret = utimensat(0, full_path, ts, 0);
 
@@ -248,7 +228,6 @@ int watdfs_read(int* argTypes, void** args)  {
     fuse_file_info *fi = (struct fuse_file_info*)args[4];
     // Unpack return code
     int *ret = (int*) args[5];
-
     // Get full path
     char *full_path = get_full_path(short_path);
 
@@ -291,6 +270,30 @@ int watdfs_write(int *argTypes, void**args) {
     } else {
         *ret = sys_ret;
     }
+    free(full_path);
+    return 0;
+}
+
+int watdfs_truncate(int* argTypes, void**args) {
+    // Unpack short path
+    char *short_path = (char*)args[0];
+    // Unpack new size
+    off_t *new_size = (off_t*)args[1];
+    // Unpack return var
+    int *ret = (int*)args[2];
+
+    char *full_path = get_full_path(short_path);
+    *ret = 0;
+
+    int sys_ret = truncate(full_path, *new_size);
+
+    if (sys_ret < 0) {
+        *ret = -errno;
+        DLOG("truncate failed with code '%d'", sys_ret);
+    } else {
+        *ret = sys_ret;
+    }
+
     free(full_path);
     return 0;
 }
@@ -532,11 +535,30 @@ int main(int argc, char *argv[]) {
         }
     } 
 
+    /* Truncate registration */
+    {
+        int argTypes[4];
+        argTypes[0] =
+            (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | 1u;
+        argTypes[1] = (1u << ARG_INPUT) | (ARG_LONG << 16u);
+        argTypes[2] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
+        argTypes[3] = 0;
+
+        ret = rpcRegister((char* )"truncate", argTypes, watdfs_truncate);
+        if(ret < 0) {
+            DLOG("rpcRegister failed to register truncate with '%d'", ret);
+        }
+    }
+
     // TODO: Hand over control to the RPC library by calling `rpcExecute`.
     int rpc_ret = rpcExecute();
     (void)rpc_ret;
 
     // rpcExecute could fail, so you may want to have debug-printing here, and
     // then you should return.
+    if(rpc_ret < 0) {
+        DLOG("rpcExecute failed to execute with '%d'", ret);
+    }
+
     return ret;
 }

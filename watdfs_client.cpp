@@ -429,6 +429,8 @@ int watdfs_cli_read(void *userdata, const char *path, char *buf, size_t size,
         fxn_ret += func_ret;
     }
 
+    delete[] args;
+
     return fxn_ret;
 }
 int watdfs_cli_write(void *userdata, const char *path, const char *buf,
@@ -463,7 +465,7 @@ int watdfs_cli_write(void *userdata, const char *path, const char *buf,
     arg_types[6] = 0;
 
     while (remaining_bytes > max_buffer_size) {
- void **args = new void*[ARG_COUNT];
+        void **args = new void*[ARG_COUNT];
         // Path pointer        
         args[0] = (void *)path;
         // Buffer pointer
@@ -524,12 +526,46 @@ int watdfs_cli_write(void *userdata, const char *path, const char *buf,
     } else {
         fxn_ret += func_ret;
     }
+    
+    delete[] args;
 
     return fxn_ret;
 }
 int watdfs_cli_truncate(void *userdata, const char *path, off_t newsize) {
     // Change the file size to newsize.
-    return -ENOSYS;
+    int ARG_COUNT = 3;
+    int arg_types[ARG_COUNT + 1];
+    int func_ret = 0;
+    int pathlen = strlen(path) + 1;
+    void **args = new void*[ARG_COUNT];
+    int fxn_ret;
+    // Set type of first argument to input, array, and char
+    arg_types[0] =
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint) pathlen;
+    // For arrays the argument is the array pointer, not a pointer to a pointer.
+    args[0] = (void *)path;
+
+    // Set type of new size
+    arg_types[1] = (1u << ARG_INPUT) | (ARG_LONG << 16u);
+    args[1] = (void*)&newsize;
+
+    // Set type of return
+    arg_types[2] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
+    args[2] = &func_ret;
+    arg_types[3] = 0;
+
+    int rpc_ret = rpcCall((char* )"truncate", arg_types, args);
+
+    if (rpc_ret < 0) {
+        DLOG("truncate rpc failed with error '%d'", rpc_ret);
+        fxn_ret = -EINVAL;
+    } else {
+        fxn_ret = func_ret;
+    }
+
+    delete[] args;
+
+    return fxn_ret;
 }
 
 int watdfs_cli_fsync(void *userdata, const char *path,
