@@ -73,7 +73,7 @@ int watdfs_cli_getattr(void *userdata, const char *path, struct stat *statbuf) {
     // The first argument is the path, it is an input only argument, and a char
     // array. The length of the array is the length of the path.
     arg_types[0] =
-        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint) pathlen;
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (unsigned int) pathlen;
     // For arrays the argument is the array pointer, not a pointer to a pointer.
     args[0] = (void *)path;
 
@@ -81,7 +81,7 @@ int watdfs_cli_getattr(void *userdata, const char *path, struct stat *statbuf) {
     // only argument, and we treat it as a char array. The length of the array
     // is the size of the stat structure, which we can determine with sizeof.
     arg_types[1] = (1u << ARG_OUTPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) |
-                   (uint) sizeof(struct stat); // statbuf
+                   (unsigned int) sizeof(struct stat); // statbuf
     args[1] = (void *)statbuf;
 
     // The third argument is the return code, an output only argument, which is
@@ -153,7 +153,7 @@ int watdfs_cli_mknod(void *userdata, const char *path, mode_t mode, dev_t dev) {
 
     // Set type of first argument to input, array, and char
     arg_types[0] =
-        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint) pathlen;
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (unsigned int) pathlen;
     // For arrays the argument is the array pointer, not a pointer to a pointer.
     args[0] = (void *)path;
 
@@ -226,13 +226,13 @@ int watdfs_cli_open(void *userdata, const char *path,
 
     // Set type of first argument to input, array, and char
     arg_types[0] =
-        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint) pathlen;
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (unsigned int) pathlen;
     // For arrays the argument is the array pointer, not a pointer to a pointer.
     args[0] = (void *)path;
 
     // Setting second argument to input, output, array, and char
     arg_types[1] = 
-        (1u << ARG_INPUT) | (1u << ARG_OUTPUT) | (1u << ARG_ARRAY)| (ARG_CHAR << 16u);
+        (1u << ARG_INPUT) | (1u << ARG_OUTPUT) | (1u << ARG_ARRAY)| (ARG_CHAR << 16u) | (unsigned int)sizeof(struct fuse_file_info);
 
     // Setting first argument to file handler
     args[1] = (void* )fi;
@@ -286,13 +286,13 @@ int watdfs_cli_release(void *userdata, const char *path,
 
     // Set type of first argument to input, array, and char
     arg_types[0] =
-        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint) pathlen;
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (unsigned int) pathlen;
     // For arrays the argument is the array pointer, not a pointer to a pointer.
     args[0] = (void *)path;
 
     // Setting second argument to input, output, array, and char
     arg_types[1] = 
-        (1u << ARG_INPUT) | (1u << ARG_ARRAY)| (ARG_CHAR << 16u);
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY)| (ARG_CHAR << 16u) |(unsigned int)sizeof(struct fuse_file_info);
 
     // Setting first argument to file handler
     args[1] = (void* )fi;
@@ -349,10 +349,10 @@ int watdfs_cli_read(void *userdata, const char *path, char *buf, size_t size,
     
     // Set type of first argument to input, array, and char
     arg_types[0] =
-        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint) pathlen;
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (unsigned int) pathlen;
             // Buffer type and size
     arg_types[1] = 
-        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint) max_buffer_size;
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (unsigned int) max_buffer_size;
             // Size type
     arg_types[2] = 
         (1u << ARG_INPUT) | (ARG_LONG << 16u);
@@ -361,7 +361,7 @@ int watdfs_cli_read(void *userdata, const char *path, char *buf, size_t size,
         (1u << ARG_INPUT) | (ARG_LONG << 16u);
         // File handler type 
     arg_types[4] =
-        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint)sizeof(struct fuse_file_info);
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (unsigned int)sizeof(struct fuse_file_info);
         // Return code type
     arg_types[5] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
     arg_types[6] = 0;
@@ -404,7 +404,7 @@ int watdfs_cli_read(void *userdata, const char *path, char *buf, size_t size,
     // At this point, there still may be some remaining bytes
     // Buffer size may have changed
     arg_types[1] = 
-        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint) max_buffer_size;
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (unsigned int) max_buffer_size;
     void **args = new void*[ARG_COUNT];
     // Path pointer        
     args[0] = (void *)path;
@@ -449,9 +449,9 @@ int watdfs_cli_write(void *userdata, const char *path, const char *buf,
     
       // Set type of first argument to input, array, and char
     arg_types[0] =
-        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint) pathlen;
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (unsigned int) pathlen;
     arg_types[1] = 
-        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint) max_buffer_size;
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (unsigned int) max_buffer_size;
     arg_types[2] = 
         (1u << ARG_INPUT) | (ARG_LONG << 16u);
     // Offset type
@@ -459,7 +459,7 @@ int watdfs_cli_write(void *userdata, const char *path, const char *buf,
         (1u << ARG_INPUT) | (ARG_LONG << 16u);
     // File handler type 
     arg_types[4] =
-        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint)sizeof(struct fuse_file_info);
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (unsigned int)sizeof(struct fuse_file_info);
         // Return code type
     arg_types[5] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
     arg_types[6] = 0;
@@ -502,7 +502,7 @@ int watdfs_cli_write(void *userdata, const char *path, const char *buf,
     // At this point, there still may be some remaining bytes
     // Buffer size may have changed
     arg_types[1] = 
-        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint) max_buffer_size;
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (unsigned int) max_buffer_size;
     void **args = new void*[ARG_COUNT];
     // Path pointer        
     args[0] = (void *)path;
@@ -541,7 +541,7 @@ int watdfs_cli_truncate(void *userdata, const char *path, off_t newsize) {
     int fxn_ret;
     // Set type of first argument to input, array, and char
     arg_types[0] =
-        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint) pathlen;
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (unsigned int) pathlen;
     // For arrays the argument is the array pointer, not a pointer to a pointer.
     args[0] = (void *)path;
 
@@ -585,7 +585,7 @@ int watdfs_cli_fsync(void *userdata, const char *path,
 
     // Set type of first argument to input, array, and char
     arg_types[0] =
-        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint) pathlen;
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (unsigned int) pathlen;
     // For arrays the argument is the array pointer, not a pointer to a pointer.
     args[0] = (void *)path;
 
@@ -646,7 +646,7 @@ int watdfs_cli_utimensat(void *userdata, const char *path,
 
     // Set type of first argument to input, array, and char
     arg_types[0] =
-        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (uint) pathlen;
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (unsigned int) pathlen;
     // For arrays the argument is the array pointer, not a pointer to a pointer.
     args[0] = (void *)path;
 

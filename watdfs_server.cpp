@@ -122,9 +122,11 @@ int watdfs_open(int *argTypes, void **args) {
     // Get full path
     char *full_path = get_full_path(short_path);
     // Open file
+    DLOG("full_path: '%s', flags: '%d'", full_path, fi->flags);
     int sys_ret = open(full_path, fi->flags);
     if(sys_ret < 0) {
         *ret = -errno;
+        perror("Issue: ");
         DLOG("open failed with code '%d'", *ret);
     } else {
         // Set file handle
@@ -236,6 +238,7 @@ int watdfs_read(int* argTypes, void** args)  {
 
     if (sys_ret < 0) {
         *ret = -errno;
+        perror("Error: ");
         DLOG("read failed with code '%d'", sys_ret);
     } else {
         *ret = sys_ret;
@@ -496,7 +499,7 @@ int main(int argc, char *argv[]) {
             (1u << ARG_INPUT) | (ARG_LONG << 16u);
         // File handler type 
         argTypes[4] =
-            (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | 1u;
+            (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (unsigned int)sizeof(struct fuse_file_info);
         // Return code type
         argTypes[5] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
         argTypes[6] = 0;
@@ -524,7 +527,7 @@ int main(int argc, char *argv[]) {
             (1u << ARG_INPUT) | (ARG_LONG << 16u);
         // File handler type 
         argTypes[4] =
-            (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | 1u;
+            (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (unsigned int)sizeof(struct fuse_file_info);
         // Return code type
         argTypes[5] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
         argTypes[6] = 0;
