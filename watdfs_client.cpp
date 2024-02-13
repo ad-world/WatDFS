@@ -414,7 +414,7 @@ int watdfs_cli_read(void *userdata, const char *path, char *buf, size_t size,
     // At this point, there still may be some remaining bytes
     // Buffer size may have changed
     arg_types[1] = 
-        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (unsigned int) max_buffer_size;
+        (1u << ARG_OUTPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (unsigned int) max_buffer_size;
     void **args = new void*[ARG_COUNT];
     // Path pointer        
     args[0] = (void *)path;
