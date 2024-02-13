@@ -63,15 +63,14 @@ int watdfs_getattr(int *argTypes, void **args) {
 
     // TODO: Make the stat system call, which is the corresponding system call needed (done)
     // to support getattr. You should use the statbuf as an argument to the stat system call.
-    // Let sys_ret be the return code from the stat system call.
-    int sys_ret = stat(full_path, statbuf);
+    // Let syscall be the return code from the stat system call.
+    int syscall = stat(full_path, statbuf);
 
-    if (sys_ret < 0) {
+    if (syscall < 0) {
         // If there is an error on the system call, then the return code should
         // be -errno.
         *ret = -errno;
         DLOG("getattr failed with code '%d'", *ret);
-        perror("Error: ");
 
     }
 
@@ -97,19 +96,18 @@ int watdfs_mknod(int *argTypes, void** args) {
     // Get full path
     char *full_path = get_full_path(short_path);
     // Call the mknod syscall
-    int sys_ret = mknod(full_path, *mode, *dev);
+    int syscall = mknod(full_path, *mode, *dev);
     // If we found an error, update return code
-    if (sys_ret < 0) {
+    if (syscall < 0) {
         *ret = -errno;
         DLOG("mknod failed with code '%d'", *ret);
-        perror("Error: ");
     } else {
-        *ret = sys_ret;
+        *ret = syscall;
     }
 
     free(full_path);
 
-    return 0;
+    return syscall;
 }
 
 int watdfs_open(int *argTypes, void **args) {
@@ -126,17 +124,16 @@ int watdfs_open(int *argTypes, void **args) {
     char *full_path = get_full_path(short_path);
     // Open file
     DLOG("full_path: '%s', flags: '%d'", full_path, fi->flags);
-    int sys_ret = open(full_path, fi->flags);
+    int syscall = open(full_path, fi->flags);
 
 
-    if(sys_ret < 0) {
+    if(syscall < 0) {
         *ret = -errno;
-        perror("Error: ");
         DLOG("open failed with code '%d'", *ret);
     } else {
         // Set file handle
-        DLOG("sys_ret is: '%d'", sys_ret);
-        fi->fh = sys_ret;
+        DLOG("syscall is: '%d'", syscall);
+        fi->fh = syscall;
         *ret = 0;
         DLOG("new file handle: '%ld'", fi->fh);
     }
@@ -144,7 +141,7 @@ int watdfs_open(int *argTypes, void **args) {
     // Free full path
     free(full_path);
 
-    return 0;
+    return syscall;
 }
 
 int watdfs_release(int *argTypes, void** args) {
@@ -162,15 +159,14 @@ int watdfs_release(int *argTypes, void** args) {
 
     DLOG("closing file with fh '%ld'", fi->fh);
 
-    int sys_ret = close(fi->fh);
+    int syscall = close(fi->fh);
 
-    if (sys_ret < 0) {
+    if (syscall < 0) {
         *ret = -errno;
         DLOG("close failed with code '%d'", *ret);
-        perror("Error: ");
 
     } else {
-        *ret = sys_ret;
+        *ret = syscall;
     }
 
     free(full_path);
@@ -189,15 +185,14 @@ int watdfs_fsync(int *argTypes, void **args) {
 
     char* full_path = get_full_path(short_path);
     // Make fsync syscall
-    int sys_ret = fsync(fi->fh);
+    int syscall = fsync(fi->fh);
 
-    if (sys_ret < 0) {
+    if (syscall < 0) {
         *ret = -errno;
-        DLOG("fsync failed with code '%d'", sys_ret);
-        perror("Error: ");
+        DLOG("fsync failed with code '%d'", syscall);
 
     } else {
-        *ret = sys_ret;
+        *ret = syscall;
     }
 
     free(full_path);
@@ -216,15 +211,14 @@ int watdfs_utimensat(int* argTypes, void **args) {
 
     char *full_path = get_full_path(short_path);
     // Make fsync syscall
-    int sys_ret = utimensat(0, full_path, ts, 0);
+    int syscall = utimensat(0, full_path, ts, 0);
 
-    if (sys_ret < 0) {
+    if (syscall < 0) {
         *ret = -errno;
-        DLOG("utimensat failed with code '%d'", sys_ret);
-        perror("Error: ");
+        DLOG("utimensat failed with code '%d'", syscall);
 
     } else {
-        *ret = sys_ret;
+        *ret = syscall;
     }
 
     free(full_path);
@@ -249,18 +243,17 @@ int watdfs_read(int* argTypes, void** args)  {
     char *full_path = get_full_path(short_path);
 
     *ret = 0;
-    int sys_ret = pread(fi->fh, buf, *size, *off);
+    int syscall = pread(fi->fh, buf, *size, *off);
 
     DLOG("reading file with fh '%ld'", fi->fh);
     DLOG("requesting to read '%ld' bytes", *size);
 
-    if (sys_ret < 0) {
+    if (syscall < 0) {
         *ret = -errno;
-        perror("Error: ");
-        DLOG("read failed with code '%d'", sys_ret);
+        DLOG("read failed with code '%d'", syscall);
     } else {
-        *ret = sys_ret;
-        DLOG("successfully read '%d' bytes", sys_ret);
+        *ret = syscall;
+        DLOG("successfully read '%d' bytes", syscall);
     }
 
     free(full_path);
@@ -286,14 +279,13 @@ int watdfs_write(int *argTypes, void**args) {
 
     DLOG("writing file with fh '%ld'", fi->fh);
 
-    int sys_ret = pwrite(fi->fh, buf, *size, *off);
+    int syscall = pwrite(fi->fh, buf, *size, *off);
 
-    if (sys_ret < 0) {
+    if (syscall < 0) {
         *ret = -errno;
-        perror("Error: ");
-        DLOG("write failed with code '%d'", sys_ret);
+        DLOG("write failed with code '%d'", syscall);
     } else {
-        *ret = sys_ret;
+        *ret = syscall;
     }
     free(full_path);
     return *ret;
@@ -310,15 +302,14 @@ int watdfs_truncate(int* argTypes, void**args) {
     char *full_path = get_full_path(short_path);
     *ret = 0;
 
-    int sys_ret = truncate(full_path, *new_size);
+    int syscall = truncate(full_path, *new_size);
 
-    if (sys_ret < 0) {
+    if (syscall < 0) {
         *ret = -errno;
-        DLOG("truncate failed with code '%d'", sys_ret);
-        perror("Error: ");
+        DLOG("truncate failed with code '%d'", syscall);
 
     } else {
-        *ret = sys_ret;
+        *ret = syscall;
     }
 
     free(full_path);

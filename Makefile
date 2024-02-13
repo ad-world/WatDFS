@@ -22,7 +22,7 @@ CXX = g++
 CXXFLAGS += $(shell pkg-config --cflags fuse)
 CXXFLAGS += -g -Wall -std=c++1y -MMD
 # If you want to disable logging messages from DLOG, uncomment the next line.
-#CXXFLAGS += -DNDEBUG
+CXXFLAGS += -DNDEBUG
 
 # Add fuse libraries.
 LDFLAGS += $(shell pkg-config --libs fuse)
