@@ -487,7 +487,7 @@ int main(int argc, char *argv[]) {
         argTypes[1] = (1u << ARG_INPUT) | (1u << ARG_ARRAY)| (ARG_CHAR << 16u);
         
         // Last arg is return
-        argTypes[2] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
+        argTypes[2] = (1u << ARG_OUTPUT) | (ARG_INT << 16u) | 1u;
 
         argTypes[3] = 0;
 
