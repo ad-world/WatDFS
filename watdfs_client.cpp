@@ -661,7 +661,7 @@ int watdfs_cli_utimensat(void *userdata, const char *path,
 
     // Setting second argument to input, array, and char
     arg_types[1] = 
-        (1u << ARG_INPUT) | (1u << ARG_ARRAY)| (ARG_CHAR << 16u) | (unsigned int)sizeof(ts);
+        (1u << ARG_INPUT) | (1u << ARG_ARRAY)| (ARG_CHAR << 16u) | (unsigned int)sizeof(struct timespec) * 2;
 
     // Setting first argument to file handler
     args[1] = (void* )ts;
