@@ -350,21 +350,22 @@ int watdfs_cli_read(void *userdata, const char *path, char *buf, size_t size,
     // Set type of first argument to input, array, and char
     arg_types[0] =
         (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (unsigned int) pathlen;
-            // Buffer type and size
+    // Buffer type and size
     arg_types[1] = 
-        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (unsigned int) max_buffer_size;
-            // Size type
+        (1u << ARG_OUTPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (unsigned int) max_buffer_size;
+    // Size type
     arg_types[2] = 
         (1u << ARG_INPUT) | (ARG_LONG << 16u);
-            // Offset type
+    // Offset type
     arg_types[3] = 
         (1u << ARG_INPUT) | (ARG_LONG << 16u);
-        // File handler type 
+    // File handler type 
     arg_types[4] =
         (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (unsigned int)sizeof(struct fuse_file_info);
-        // Return code type
+    // Return code type
     arg_types[5] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
     arg_types[6] = 0;
+
 
     while (remaining_bytes > max_buffer_size) {
         void **args = new void*[ARG_COUNT];
@@ -382,16 +383,25 @@ int watdfs_cli_read(void *userdata, const char *path, char *buf, size_t size,
         args[5] = (void* )&func_ret;
 
         int rpc_ret = rpcCall((char* )"read", arg_types, args);
+        DLOG("size: '%ld', offset: '%ld'", remaining_bytes, off);
+
+        DLOG("INSIDE WHILE LOOP");
 
         delete[] args;
 
         if (rpc_ret < 0) {
             fxn_ret = -EINVAL;
             return fxn_ret;
-        } else {
-            if (func_ret < 0) {
-                return fxn_ret;
-            }
+        }
+
+        if (func_ret < 0) {
+            fxn_ret = func_ret;
+            return fxn_ret;
+        }
+
+        if (func_ret < MAX_ARRAY_LEN) {
+            fxn_ret += func_ret;
+            return fxn_ret;
         }
 
         off = off + func_ret;
@@ -460,7 +470,6 @@ int watdfs_cli_write(void *userdata, const char *path, const char *buf,
     // File handler type 
     arg_types[4] =
         (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (unsigned int)sizeof(struct fuse_file_info);
-        // Return code type
     arg_types[5] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
     arg_types[6] = 0;
 
@@ -517,7 +526,7 @@ int watdfs_cli_write(void *userdata, const char *path, const char *buf,
     // Return code pointer
     args[5] = (void* )&func_ret;
 
-    int rpc_ret = rpcCall((char* )"read", arg_types, args);
+    int rpc_ret = rpcCall((char* )"write", arg_types, args);
 
     if (rpc_ret < 0) {
         fxn_ret = -EINVAL;
