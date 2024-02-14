@@ -484,10 +484,10 @@ int main(int argc, char *argv[]) {
         argTypes[0] =
             (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | 1u;
         // Setting second argument to input, array, and char
-        argTypes[1] = (1u << ARG_INPUT) | (1u << ARG_ARRAY)| (ARG_CHAR << 16u);
+        argTypes[1] = (1u << ARG_INPUT) | (1u << ARG_ARRAY)| (ARG_CHAR << 16u) | 1u;
         
         // Last arg is return
-        argTypes[2] = (1u << ARG_OUTPUT) | (ARG_INT << 16u) | 1u;
+        argTypes[2] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
 
         argTypes[3] = 0;
 
