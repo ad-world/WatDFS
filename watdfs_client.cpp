@@ -674,7 +674,7 @@ int watdfs_cli_utimensat(void *userdata, const char *path,
 
     arg_types[3] = 0;
 
-    rpc_ret = rpcCall((char* )"utimenstat", arg_types, args);
+    rpc_ret = rpcCall((char* )"utimensat", arg_types, args);
 
     int fxn_ret = 0;
     if (rpc_ret < 0) {

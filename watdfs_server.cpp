@@ -491,9 +491,9 @@ int main(int argc, char *argv[]) {
 
         argTypes[3] = 0;
 
-        ret = rpcRegister((char *)"utimenstat", argTypes, watdfs_utimensat);
+        ret = rpcRegister((char *)"utimensat", argTypes, watdfs_utimensat);
         if(ret < 0) {
-            DLOG("rpcRegister failed to register utimenstat with '%d'", ret);
+            DLOG("rpcRegister failed to register utimensat with '%d'", ret);
         }
     }
 
