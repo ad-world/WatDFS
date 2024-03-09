@@ -9,6 +9,262 @@
 INIT_LOG
 
 #include "rpc.h"
+#include <sys/stat.h>
+#include <map>
+
+struct meta {
+  int client_mode;
+  int server_mode;
+  time_t tc;
+};
+
+struct state {
+    time_t interval;
+    char *cached_path;
+    std::map<std::string, struct meta> open_files;
+};
+
+
+/*
+RPC call namespace
+*/
+namespace RPC {
+    int open_rpc(void *userdata, const char *path,
+                    struct fuse_file_info *fi) {
+        // Called during open.
+        // You should fill in fi->fh.
+        
+        // Declaring arg count
+        int ARG_COUNT = 3;
+
+        // Arg array
+        void **args = new void*[ARG_COUNT];
+
+        // Create int array for argument types
+        int arg_types[ARG_COUNT + 1];
+
+        // pathlen + 1 for null terminator
+        int pathlen = strlen(path) + 1;
+
+        // Set type of first argument to input, array, and char
+        arg_types[0] =
+            (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (unsigned int) pathlen;
+        // For arrays the argument is the array pointer, not a pointer to a pointer.
+        args[0] = (void *)path;
+
+        // Setting second argument to input, output, array, and char
+        arg_types[1] = 
+            (1u << ARG_INPUT) | (1u << ARG_OUTPUT) | (1u << ARG_ARRAY)| (ARG_CHAR << 16u) | (unsigned int)sizeof(struct fuse_file_info);
+
+        // Setting first argument to file handler
+        args[1] = (void* )fi;
+
+        int rpc_ret = 0;
+        int func_ret = 0;
+        arg_types[2] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
+
+        args[2] = (void *) &func_ret;
+
+        arg_types[3] = 0;
+
+        rpc_ret = rpcCall((char* )"open", arg_types, args);
+
+        int fxn_ret = 0;
+        if (rpc_ret < 0) {
+            DLOG("open rpc failed with error '%d'", rpc_ret);
+            // Something went wrong with the rpcCall, return a sensible return
+            // value. In this case lets return, -EINVAL
+            fxn_ret = -EINVAL;
+        } else {
+            // Our RPC call succeeded. However, it's possible that the return code
+            // from the server is not 0, that is it may be -errno. Therefore, we
+            // should set our function return value to the retcode from the server.
+
+            // TODO: set the function return value to the return code from the server.
+            fxn_ret = func_ret;
+        }
+
+        // Clean up the memory we have allocated.
+        delete []args;
+
+        // Finally return the value we got from the server.
+        return fxn_ret;
+    }
+
+    int get_attr_rpc(void *userdata, const char *path, struct stat *statbuf) {
+        // SET UP THE RPC CALL
+        DLOG("get_attr_rpc called for '%s'", path);
+        
+        // getattr has 3 arguments.
+        int ARG_COUNT = 3;
+
+        // Allocate space for the output arguments.
+        void **args = new void*[ARG_COUNT];
+
+        // Allocate the space for arg types, and one extra space for the null
+        // array element.
+        int arg_types[ARG_COUNT + 1];
+
+        // The path has string length (strlen) + 1 (for the null character).
+        int pathlen = strlen(path) + 1;
+
+        // Fill in the arguments
+        // The first argument is the path, it is an input only argument, and a char
+        // array. The length of the array is the length of the path.
+        arg_types[0] =
+            (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (unsigned int) pathlen;
+        // For arrays the argument is the array pointer, not a pointer to a pointer.
+        args[0] = (void *)path;
+
+        // The second argument is the stat structure. This argument is an output
+        // only argument, and we treat it as a char array. The length of the array
+        // is the size of the stat structure, which we can determine with sizeof.
+        arg_types[1] = (1u << ARG_OUTPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) |
+                    (unsigned int) sizeof(struct stat); // statbuf
+        args[1] = (void *)statbuf;
+
+        // The third argument is the return code, an output only argument, which is
+        // an integer.
+        // TODO: fill in this argument type.
+
+        // The return code is not an array, so we need to hand args[2] an int*.
+        // The int* could be the address of an integer located on the stack, or use
+        // a heap allocated integer, in which case it should be freed.
+        // TODO: Fill in the argument
+        arg_types[2] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
+        int rpc_ret = 0;
+        int func_ret = 0;
+        args[2] = (void* )&func_ret;
+        // Finally, the last position of the arg types is 0. There is no
+        // corresponding arg.
+        arg_types[3] = 0;
+
+        // MAKE THE RPC CALL
+        rpc_ret = rpcCall((char *)"getattr", arg_types, args);
+
+        // HANDLE THE RETURN
+        // The integer value watdfs_cli_getattr will return.
+        int fxn_ret = 0;
+        if (rpc_ret < 0) {
+            DLOG("getattr rpc failed with error '%d'", rpc_ret);
+            // Something went wrong with the rpcCall, return a sensible return
+            // value. In this case lets return, -EINVAL
+            fxn_ret = -EINVAL;
+        } else {
+            // Our RPC call succeeded. However, it's possible that the return code
+            // from the server is not 0, that is it may be -errno. Therefore, we
+            // should set our function return value to the retcode from the server.
+
+            // TODO: set the function return value to the return code from the server.
+            fxn_ret = func_ret;
+        }
+
+        if (fxn_ret < 0) {
+            // If the return code of watdfs_cli_getattr is negative (an error), then 
+            // we need to make sure that the stat structure is filled with 0s. Otherwise,
+            // FUSE will be confused by the contradicting return values.
+            memset(statbuf, 0, sizeof(struct stat));
+        }
+
+        // Clean up the memory we have allocated.
+        delete []args;
+
+        // Finally return the value we got from the server.
+        return fxn_ret;
+    }
+}
+
+/* Helper function namespace*/
+namespace helpers {
+    int download_file(char *path, char *full_path, struct state *userdata) {
+        int sys_ret = 0;
+        struct fuse_file_info *fi = new struct fuse_file_info;
+        struct stat *statbuf = new struct stat;
+
+        int func_ret = 0;
+
+        // Check if file exists on server
+        int get_attr = RPC::get_attr_rpc((void* )userdata, path, statbuf);
+
+        if (get_attr < 0) {
+            delete statbuf;
+            delete fi;
+            return get_attr;
+        }
+
+        DLOG("File %s found on server.", path);
+
+        size_t size = statbuf->st_size;
+
+        int fh = open(full_path, O_RDWR);
+        if (fh < 0) {
+            // Create the file
+            mknod(full_path, statbuf->st_mode, statbuf->st_dev);
+            fh = open(full_path, O_RDWR);
+        }
+
+        fi->flags = O_RDONLY;
+
+        // TRUNCATE THE FILE AT THE CLIENT
+        int trunc_ret = truncate(full_path, (off_t) size);
+
+        if (trunc_ret < 0) func_ret = -errno;
+
+        char *buffer = new char[size];
+
+        // Open file on server
+        int open_ret = RPC::open_rpc((void*) userdata, path, fi);
+        if (open_ret < 0) func_ret = open_ret;
+
+        DLOG("File %s opened on server.", path);
+
+        // Read file into local buffer
+        int read_ret = watdfs_cli_read((void*) userdata, path, buffer, size, 0, fi);
+        if (read_ret < 0) func_ret = read_ret;
+
+        DLOG("File %s read on server.", path);
+
+        // Write buffer into file handler
+        int write_ret = pwrite(fh, buffer, size, 0);
+
+        if (write_ret < 0) {
+            func_ret = -errno;
+            delete[] buffer;
+            delete statbuf;
+            delete fi;
+            return func_ret;
+        }
+
+        // Update metadata at the client
+        struct timespec ts[2] = { statbuf->st_mtim, statbuf->st_mtim };
+        int utime_ret = utimensat(0, full_path, ts, 0);
+
+        // Download complete, release on server
+        int release_ret = watdfs_cli_release((void*) userdata, path, fi);
+        if (release_ret < 0) func_ret = release_ret;
+        DLOG("File %s released on server.", path);
+
+        int close_ret = close(utime_ret);
+
+        delete[] buffer;
+        delete fi;
+        delete statbuf;
+        return func_ret;
+    }
+
+    char *full_path(struct state *userdata, char *path) {
+        int path_len = strlen(path);
+        int dir_len = strlen(userdata->cached_path);
+
+        int length = dir_len + path_len + 1;
+        char *full_path = new char[length];
+        strncpy(full_path, userdata->cached_path, dir_len);
+        strncat(full_path, path, path_len);
+
+        return full_path;
+    }
+}
+
 
 // SETUP AND TEARDOWN
 void *watdfs_cli_init(struct fuse_conn_info *conn, const char *path_to_cache,
@@ -33,7 +289,10 @@ void *watdfs_cli_init(struct fuse_conn_info *conn, const char *path_to_cache,
     // TODO Initialize any global state that you require for the assignment and return it.
     // The value that you return here will be passed as userdata in other functions.
     // In A1, you might not need it, so you can return `nullptr`.
-    void *userdata = nullptr;
+    struct state *userdata = new struct state;
+    userdata->cached_path = new char[strlen(path_to_cache)];
+    userdata->interval = cache_interval;
+    strcpy(userdata->cached_path, path_to_cache); 
 
     // TODO: save `path_to_cache` and `cache_interval` (for A3).
 
@@ -43,7 +302,7 @@ void *watdfs_cli_init(struct fuse_conn_info *conn, const char *path_to_cache,
     *ret_code = ret;
 
     // Return pointer to global state data.
-    return userdata;
+    return (void* )userdata;
 }
 
 void watdfs_cli_destroy(void *userdata) {
@@ -209,64 +468,50 @@ int watdfs_cli_mknod(void *userdata, const char *path, mode_t mode, dev_t dev) {
 
 int watdfs_cli_open(void *userdata, const char *path,
                     struct fuse_file_info *fi) {
-    // Called during open.
-    // You should fill in fi->fh.
-    
-    // Declaring arg count
-    int ARG_COUNT = 3;
+    char *full_path = helpers::full_path((struct state*) userdata, (char *)path);
 
-    // Arg array
-    void **args = new void*[ARG_COUNT];
+    struct state *state_ref = (struct state*) userdata;
+    std::string path_string = std::string(full_path);
 
-    // Create int array for argument types
-    int arg_types[ARG_COUNT + 1];
-
-    // pathlen + 1 for null terminator
-    int pathlen = strlen(path) + 1;
-
-    // Set type of first argument to input, array, and char
-    arg_types[0] =
-        (1u << ARG_INPUT) | (1u << ARG_ARRAY) | (ARG_CHAR << 16u) | (unsigned int) pathlen;
-    // For arrays the argument is the array pointer, not a pointer to a pointer.
-    args[0] = (void *)path;
-
-    // Setting second argument to input, output, array, and char
-    arg_types[1] = 
-        (1u << ARG_INPUT) | (1u << ARG_OUTPUT) | (1u << ARG_ARRAY)| (ARG_CHAR << 16u) | (unsigned int)sizeof(struct fuse_file_info);
-
-    // Setting first argument to file handler
-    args[1] = (void* )fi;
-
-    int rpc_ret = 0;
-    int func_ret = 0;
-    arg_types[2] = (1u << ARG_OUTPUT) | (ARG_INT << 16u);
-
-    args[2] = (void *) &func_ret;
-
-    arg_types[3] = 0;
-
-    rpc_ret = rpcCall((char* )"open", arg_types, args);
-
-    int fxn_ret = 0;
-    if (rpc_ret < 0) {
-        DLOG("open rpc failed with error '%d'", rpc_ret);
-        // Something went wrong with the rpcCall, return a sensible return
-        // value. In this case lets return, -EINVAL
-        fxn_ret = -EINVAL;
-    } else {
-        // Our RPC call succeeded. However, it's possible that the return code
-        // from the server is not 0, that is it may be -errno. Therefore, we
-        // should set our function return value to the retcode from the server.
-
-        // TODO: set the function return value to the return code from the server.
-        fxn_ret = func_ret;
+    // If file is open, return error
+    if (state_ref->open_files.find(path_string) != state_ref->open_files.end()) {
+        DLOG("Trying to open %s which is already open.", full_path);
+        delete[] full_path;
+        return -EMFILE;
     }
 
-    // Clean up the memory we have allocated.
-    delete []args;
+    struct stat *buf = new struct stat;
 
-    // Finally return the value we got from the server.
-    return fxn_ret;
+    int get_attr_ret = RPC::get_attr_rpc(userdata, path, buf);
+    
+    int func_ret = 0;
+
+    if (get_attr_ret < 0) {
+        // Do something, file doesn't exist on the server
+    } else {
+        int download_ret = helpers::download_file(full_path, (char* )path, (state* ) userdata);
+        if (download_ret < 0) func_ret = download_ret;
+    }
+
+    if (func_ret >= 0) {
+        int open_ret = open(full_path, fi->flags);
+
+        if (open_ret < 0) {
+            delete[] full_path;
+            delete buf;
+            return -errno;
+        }
+
+        struct meta file = { fi->flags, open_ret, time(0) }; 
+        ((struct state*) userdata)->open_files[std::string(full_path)] = file;
+        func_ret = 0;
+    } else {
+        func_ret = -errno;
+    }
+
+    delete[] full_path;
+    delete buf;
+    return func_ret;
 }
 
 int watdfs_cli_release(void *userdata, const char *path,
@@ -697,3 +942,4 @@ int watdfs_cli_utimensat(void *userdata, const char *path,
     // Finally return the value we got from the server.
     return fxn_ret;
 }
+
