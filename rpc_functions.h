@@ -16,6 +16,7 @@
 #include "rpc.h"
 #include <map>
 #include <sys/stat.h>
+#include "rw_lock.h"
 
 /*
 RPC call namespace
@@ -643,25 +644,101 @@ namespace RPC {
 
         rpc_ret = rpcCall((char* )"utimensat", arg_types, args);
 
-        int fxn_ret = 0;
+        int func_ret = 0;
         if (rpc_ret < 0) {
             // DLOG("utimenstat rpc failed with error '%d'", rpc_ret);
             // Something went wrong with the rpcCall, return a sensible return
             // value. In this case lets return, -EINVAL
-            fxn_ret = -EINVAL;
+            func_ret = -EINVAL;
         } else {
             // Our RPC call succeeded. However, it's possible that the return code
             // from the server is not 0, that is it may be -errno. Therefore, we
             // should set our function return value to the retcode from the server.
 
             // TODO: set the function return value to the return code from the server.
-            fxn_ret = rpc_ret;
+            func_ret = rpc_ret;
         }
 
         // Clean up the memory we have allocated.
         delete []args;
 
         // Finally return the value we got from the server.
-        return fxn_ret;
+        return func_ret;
+    }
+
+    int lock_rpc(char *path, rw_lock_mode_t mode) {
+        int ARG_COUNT = 3;
+
+        void **args = new void*[ARG_COUNT];
+
+        int arg_types[ARG_COUNT + 1];
+
+        int pathlen = strlen(path) + 1;
+        int rpc_ret = 0;
+
+        arg_types[0] = (1 << ARG_INPUT) | (1 << ARG_ARRAY) | (ARG_CHAR << 16) | pathlen;
+
+        args[0] = (void*) path;
+
+        arg_types[1] = (1 << ARG_INPUT) | (ARG_INT << 16);
+
+        args[1] = (void*) &mode;
+
+        arg_types[2] = (1 << ARG_OUTPUT) | (ARG_INT << 16);
+
+        args[2] = (void*) &rpc_ret;
+
+        arg_types[3] = 0;
+
+
+        rpc_ret = rpcCall((char*)"lock", arg_types, args);
+
+        int func_ret = 0;
+        if(rpc_ret < 0) {
+            func_ret = -EINVAL;
+        } else {
+            func_ret = rpc_ret;
+        }
+
+        delete[] args;
+        return func_ret;
+    }
+
+    int unlock_rpc(char* path, rw_lock_mode_t mode) {
+        int ARG_COUNT = 3;
+
+        void **args = new void*[ARG_COUNT];
+
+        int arg_types[ARG_COUNT + 1];
+
+        int pathlen = strlen(path) + 1;
+        int rpc_ret = 0;
+
+        arg_types[0] = (1 << ARG_INPUT) | (1 << ARG_ARRAY) | (ARG_CHAR << 16) | pathlen;
+
+        args[0] = (void*) path;
+
+        arg_types[1] = (1 << ARG_INPUT) | (ARG_INT << 16);
+
+        args[1] = (void*) &mode;
+
+        arg_types[2] = (1 << ARG_OUTPUT) | (ARG_INT << 16);
+
+        args[2] = (void*) &rpc_ret;
+
+        arg_types[3] = 0;
+
+
+        rpc_ret = rpcCall((char*)"unlock", arg_types, args);
+
+        int func_ret = 0;
+        if(rpc_ret < 0) {
+            func_ret = -EINVAL;
+        } else {
+            func_ret = rpc_ret;
+        }
+
+        delete[] args;
+        return func_ret;
     }
 }

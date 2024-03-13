@@ -14,6 +14,9 @@ INIT_LOG
 #include <cstring>
 #include <cstdlib>
 #include <fuse.h>
+#include <map>
+#include "rw_lock.h"
+#include <string>
 
 // Global state server_persist_dir.
 char *server_persist_dir = nullptr;
@@ -21,6 +24,12 @@ char *server_persist_dir = nullptr;
 // Important: the server needs to handle multiple concurrent client requests.
 // You have to be careful in handling global variables, especially for updating them.
 // Hint: use locks before you update any global variable.
+struct file_handler {
+    bool read_access;
+    rw_lock_t * lock;
+};
+
+std::map<std::string, struct file_handler> files;
 
 // We need to operate on the path relative to the server_persist_dir.
 // This function returns a path that appends the given short path to the
@@ -316,6 +325,46 @@ int watdfs_truncate(int* argTypes, void**args) {
     return 0;
 }
 
+int watdfs_lock(int *argTypes, void**args) {
+    char *short_path = (char*)args[0];
+    char *full_path = get_full_path(short_path);
+
+    rw_lock_mode_t *mode = (rw_lock_mode_t* )args[1];
+
+    int *ret = (int*)args[2];
+
+    rw_lock_t *lock = files[std::string(short_path)].lock;
+
+    int lock_ret = rw_lock_lock(lock, *mode);
+    if (lock_ret < 0) {
+        *ret = -1;
+    } else {
+        *ret = lock_ret;
+    }
+
+    free(full_path);
+    return 0;
+}
+
+int watdfs_unlock(int* argTypes, void**args) {
+     char *short_path = (char*)args[0];
+    char *full_path = get_full_path(short_path);
+
+    rw_lock_mode_t *mode = (rw_lock_mode_t* )args[1];
+
+    int *ret = (int*)args[2];
+
+    rw_lock_t *lock = files[std::string(short_path)].lock;
+    int unlock_ret = rw_lock_unlock(lock, *mode);
+    if (unlock_ret < 0) {
+        *ret = -1;
+    } else {
+        *ret = unlock_ret;
+    }
+
+    free(full_path);
+    return 0;
+}
 
 // The main function of the server.
 int main(int argc, char *argv[]) {
@@ -564,6 +613,20 @@ int main(int argc, char *argv[]) {
         ret = rpcRegister((char* )"truncate", argTypes, watdfs_truncate);
         if(ret < 0) {
             DLOG("rpcRegister failed to register truncate with '%d'", ret);
+        }
+    }
+
+    /* Lock registration */
+    {
+        int argTypes[3];
+        argTypes[0] = (1 << ARG_INPUT) | (1 << ARG_ARRAY) | (ARG_CHAR << 16) | 1u;
+        argTypes[1] = (1 << ARG_INPUT) | (ARG_INT << 16);
+        argTypes[2] = (1 << ARG_OUTPUT) | (ARG_INT << 16);
+        argTypes[3] = 0;
+
+        ret = rpcRegister((char*)"lock", argTypes, watdfs_lock);
+        if (ret < 0) {
+            DLOG("rpcRegister failed to register lock with '%d'", ret);
         }
     }
 
