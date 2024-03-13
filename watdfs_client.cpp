@@ -94,7 +94,7 @@ namespace helpers {
         int utime_ret = utimensat(0, full_path, ts, 0);
 
         // Download complete, release on server
-        int release_ret = watdfs_cli_release((void*) userdata, path, fi);
+        int release_ret = RPC::release_rpc((void*) userdata, path, fi);
         if (release_ret < 0) func_ret = release_ret;
         DLOG("File %s released on server.", path);
 
@@ -282,7 +282,26 @@ int watdfs_cli_open(void *userdata, const char *path,
 int watdfs_cli_release(void *userdata, const char *path,
                        struct fuse_file_info *fi) {
     // Called during close, but possibly asynchronously.
-    return RPC::release_rpc(userdata, path, fi);
+    struct state* cast_state = (struct state*)userdata;
+    char *full_path = helpers::full_path(cast_state, (char*) path);
+    int file_access_mode = cast_state->open_files[std::string(full_path)].client_mode;
+    int func_ret = 0;
+
+    if ((file_access_mode & O_ACCMODE) != O_RDONLY) {
+        int push_ret = helpers::upload_file(full_path, (char*)path, cast_state);
+        if (push_ret < 0) return push_ret;
+    }
+
+    int close_ret = close(cast_state->open_files[std::string(full_path)].server_mode);
+    if (close_ret < 0) {
+        func_ret = -errno;
+    }  else {
+        cast_state->open_files.erase(std::string(full_path));
+    }
+
+    delete[] full_path;
+
+    return func_ret;
 }
 
 int watdfs_cli_read(void *userdata, const char *path, char *buf, size_t size,
