@@ -21,11 +21,16 @@ INIT_LOG
 // Global state server_persist_dir.
 char *server_persist_dir = nullptr;
 
+enum AccessType {
+    READ,
+    WRITE
+};
+
 // Important: the server needs to handle multiple concurrent client requests.
 // You have to be careful in handling global variables, especially for updating them.
 // Hint: use locks before you update any global variable.
 struct file_handler {
-    bool read_access;
+    AccessType access_type;
     rw_lock_t * lock;
 };
 
@@ -131,9 +136,31 @@ int watdfs_open(int *argTypes, void **args) {
 
     // Get full path
     char *full_path = get_full_path(short_path);
+
+    std::string short_path_string = std::string(short_path);
+    
+    // If file is not open
+    if (files.find(short_path_string) == files.end()) {
+        AccessType new_access_type = fi->flags == O_RDONLY ? READ : WRITE;
+        // Create a new struct for this file
+        struct file_handler file_data = { new_access_type, new rw_lock_t };
+        rw_lock_init(file_data.lock);
+        files[short_path_string] = file_data;
+    } else {
+        // The file is already open
+        if (files[short_path_string].access_type == READ) {
+            // File is already open in read mode
+            if (fi->flags == O_RDWR) files[short_path_string].access_type = WRITE;
+        } else {
+            // File is already open in write mode
+            if (fi->flags == O_RDWR) return -EACCES;
+        }
+    }
+
     // Open file
     DLOG("full_path: '%s', flags: '%d'", full_path, fi->flags);
     int syscall = open(full_path, fi->flags);
+
 
 
     if(syscall < 0) {

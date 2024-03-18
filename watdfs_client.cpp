@@ -64,6 +64,8 @@ namespace helpers {
 
         if (trunc_ret < 0) func_ret = -errno;
 
+        int lock_ret = RPC::lock_rpc(path, RW_READ_LOCK);
+
         char *buffer = new char[size];
 
         // Open file on server
@@ -77,6 +79,8 @@ namespace helpers {
         if (read_ret < 0) func_ret = read_ret;
 
         DLOG("File %s read on server.", path);
+
+        int unlock_ret = RPC::unlock_rpc(path, RW_READ_LOCK);
 
         // Write buffer into file handler
         int write_ret = pwrite(fh, buffer, size, 0);
@@ -120,14 +124,20 @@ namespace helpers {
 
     int upload_file(char *full_path, char *path, struct state *userdata) {
         struct fuse_file_info *fi = new struct fuse_file_info;
+
+        int lock_ret = RPC::lock_rpc(path, RW_WRITE_LOCK);
+
         struct stat *buf = new struct stat;
         fi->flags = O_RDWR;
+        
         int func_ret = 0;
 
         int stat_ret = stat(full_path, buf);
 
         if ( stat_ret < 0) {
             func_ret = -errno;
+            RPC::unlock_rpc(path, RW_WRITE_LOCK);
+            return func_ret;
         }
 
         int open_ret = RPC::open_rpc((void*) userdata, path, fi);
@@ -139,6 +149,8 @@ namespace helpers {
 
         if (open_ret < 0) {
             func_ret = -errno;
+            RPC::unlock_rpc(path, RW_WRITE_LOCK);
+            return func_ret;
         }
 
         open_ret = open(full_path, O_RDONLY);
@@ -157,11 +169,13 @@ namespace helpers {
         int write_ret = RPC::write_rpc((void*)userdata, path, buffer, (off_t)buf->st_size, 0, fi);
         if (write_ret < 0) func_ret = write_ret;
 
+        int unlock_ret = RPC::unlock_rpc(path, RW_WRITE_LOCK);
+
         struct timespec ts[2];
         ts[0] = (struct timespec)(buf->st_mtim);
         ts[1] = (struct timespec)(buf->st_mtim);
 
-        int utim_ret = watdfs_cli_utimensat((void*) userdata, path, ts);
+        int utim_ret = RPC::utimensat_rpc((void*) userdata, path, ts);
         if (utim_ret < 0) func_ret = utim_ret;
         int get_attr_ret = RPC::get_attr_rpc((void*) userdata, path, buf);
         if (get_attr_ret < 0 ) func_ret = get_attr_ret;
@@ -289,7 +303,10 @@ int watdfs_cli_release(void *userdata, const char *path,
 
     if ((file_access_mode & O_ACCMODE) != O_RDONLY) {
         int push_ret = helpers::upload_file(full_path, (char*)path, cast_state);
-        if (push_ret < 0) return push_ret;
+        if (push_ret < 0) {
+            DLOG("Uploading file failed with: '%d'", push_ret);
+            return push_ret;
+        }
     }
 
     int close_ret = close(cast_state->open_files[std::string(full_path)].server_mode);
