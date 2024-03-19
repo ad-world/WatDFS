@@ -14,8 +14,8 @@ INIT_LOG
 #include "rpc_functions.h"
 
 struct meta {
-  int client_mode;
-  int server_mode;
+  int client_flags;
+  int file_handler;
   time_t tc;
 };
 
@@ -186,6 +186,43 @@ namespace helpers {
 
         return func_ret;
     }
+
+    bool use_file_from_cache(char *full_path, char* path, struct state *userdata) {
+        struct stat *client = new struct stat;
+        int client_getattr = stat(full_path, client);
+
+        time_t T_c = client->st_mtime;
+
+        delete client;
+
+        std::string file_string = std::string(full_path);
+        struct meta file_metadata = userdata->open_files[file_string];
+        time_t time_interval = userdata->interval;
+
+        if ((time(0) - file_metadata.tc) < time_interval) {
+            userdata->open_files[file_string].tc = time(0);
+            return true;
+        }
+
+        struct stat *server = new struct stat;
+
+        int server_getattr = RPC::get_attr_rpc((void* )userdata, path, server);
+        if(server_getattr < 0) {
+            delete server;
+            return false;
+        }
+
+        time_t T_s = server->st_mtime;
+        delete server;
+
+        // If time is the same, can use cached copy
+        if (T_s == T_c) {
+            userdata->open_files[file_string].tc = time(0);
+            return true;
+        }
+       
+        return false;
+    }
 }
 
 
@@ -298,7 +335,7 @@ int watdfs_cli_release(void *userdata, const char *path,
     // Called during close, but possibly asynchronously.
     struct state* cast_state = (struct state*)userdata;
     char *full_path = helpers::full_path(cast_state, (char*) path);
-    int file_access_mode = cast_state->open_files[std::string(full_path)].client_mode;
+    int file_access_mode = cast_state->open_files[std::string(full_path)].client_flags;
     int func_ret = 0;
 
     if ((file_access_mode & O_ACCMODE) != O_RDONLY) {
@@ -309,7 +346,7 @@ int watdfs_cli_release(void *userdata, const char *path,
         }
     }
 
-    int close_ret = close(cast_state->open_files[std::string(full_path)].server_mode);
+    int close_ret = close(cast_state->open_files[std::string(full_path)].file_handler);
     if (close_ret < 0) {
         func_ret = -errno;
     }  else {
@@ -323,7 +360,28 @@ int watdfs_cli_release(void *userdata, const char *path,
 
 int watdfs_cli_read(void *userdata, const char *path, char *buf, size_t size,
                     off_t offset, struct fuse_file_info *fi) {
-   return RPC::read_rpc(userdata, path, buf, size, offset, fi);
+    char *full_path = helpers::full_path((struct state*)userdata, (char* )path);
+    std::string file_string = std::string(full_path);
+    struct state *cast_state = (struct state*) userdata;
+
+    if(cast_state->open_files.find(file_string) == cast_state->open_files.end()) {
+        // File isn't open
+        delete[] full_path;
+        return -EMFILE;
+    }
+
+    bool use_from_cache = helpers::use_file_from_cache(full_path, (char *) path, cast_state);
+
+    if (!use_from_cache) {
+        int download_code = helpers::download_file((char* )path, full_path, cast_state);
+        if (download_code < 0) return -EMFILE;
+
+        cast_state->open_files[file_string].tc = time(0);
+    }
+
+    delete[] full_path;
+
+    return pread(cast_state->open_files[file_string].file_handler, buf, size, offset);
 }
 
 int watdfs_cli_write(void *userdata, const char *path, const char *buf,

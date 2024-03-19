@@ -374,7 +374,7 @@ int watdfs_lock(int *argTypes, void**args) {
 }
 
 int watdfs_unlock(int* argTypes, void**args) {
-     char *short_path = (char*)args[0];
+    char *short_path = (char*)args[0];
     char *full_path = get_full_path(short_path);
 
     rw_lock_mode_t *mode = (rw_lock_mode_t* )args[1];
