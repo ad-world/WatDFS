@@ -422,7 +422,30 @@ int watdfs_cli_truncate(void *userdata, const char *path, off_t newsize) {
 int watdfs_cli_fsync(void *userdata, const char *path,
                      struct fuse_file_info *fi) {
     // Force a flush of file data.
-    return RPC::fsync_rpc(userdata, path, fi);
+    struct state *cast_state = (struct state*)userdata;
+    char *full_path = helpers::full_path(cast_state, (char*) path);
+    std::string file_string = std::string(full_path);
+
+    if(cast_state->open_files.find(file_string) == cast_state->open_files.end()) {
+        delete[] full_path;
+        return -EMFILE;
+    }
+
+    // If file is opened in READ MODE, cannot flush
+    if ((cast_state->open_files[file_string].client_flags & O_ACCMODE) == O_RDONLY) {
+        return -EPERM;
+    }
+
+    int push_update = helpers::upload_file(full_path, (char* )path, cast_state); 
+    if (push_update < 0) {
+        delete[] full_path;
+        return push_update;
+    }
+
+    cast_state->open_files[file_string].tc = time(0);
+    delete[] full_path;
+
+    return 0;
 }
 
 // CHANGE METADATA
