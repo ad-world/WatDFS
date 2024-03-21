@@ -386,7 +386,33 @@ int watdfs_cli_read(void *userdata, const char *path, char *buf, size_t size,
 
 int watdfs_cli_write(void *userdata, const char *path, const char *buf,
                      size_t size, off_t offset, struct fuse_file_info *fi) {
-    return RPC::write_rpc(userdata, path, buf, size, offset, fi);
+    struct state *cast_state = (struct state*)userdata;
+    char *full_path = helpers::full_path(cast_state, (char*) path);
+    std::string file_string = std::string(full_path);
+
+    if(cast_state->open_files.find(file_string) == cast_state->open_files.end()) {
+        delete[] full_path;
+        return -EMFILE;
+    }
+
+    int func_ret = 0;
+
+    int write_code = pwrite(cast_state->open_files[file_string].file_handler, buf, size, offset);
+
+    if (write_code >= 0) {
+        bool use_from_cache = helpers::use_file_from_cache(full_path, (char* )path, cast_state);
+        if (!use_from_cache) {
+            func_ret = helpers::upload_file(full_path, (char* ) path, cast_state);
+            cast_state->open_files[file_string].tc = time(0);
+        }
+    } else {
+        func_ret = -errno;
+    } 
+
+    delete[] full_path;
+    
+    if (func_ret < 0) return func_ret;
+    return write_code;
 }
 
 int watdfs_cli_truncate(void *userdata, const char *path, off_t newsize) {
