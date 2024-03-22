@@ -26,8 +26,6 @@ struct state {
 };
 
 
-
-
 /* Helper function namespace*/
 namespace helpers {
     int download_file(char *path, char *full_path, struct state *userdata) {
@@ -273,12 +271,98 @@ void watdfs_cli_destroy(void *userdata) {
 
 // GET FILE ATTRIBUTES
 int watdfs_cli_getattr(void *userdata, const char *path, struct stat *statbuf) {
-   return RPC::get_attr_rpc(userdata, path, statbuf);
+    struct state *state_ref = (struct state*) userdata;
+    char *full_path = helpers::full_path(state_ref, (char *)path);
+    std::string path_string = std::string(full_path);
+
+    // File is not open
+    if (state_ref->open_files.find(path_string) == state_ref->open_files.end()) {
+        int download_ret = helpers::download_file((char* )path, full_path, state_ref);
+        if (download_ret < 0) {
+            delete[] full_path;
+            return download_ret;
+        }
+
+        int open_ret = open(full_path, O_RDONLY);
+        if (open_ret < 0) {
+            delete[] full_path;
+            return -errno;
+        }
+
+        int stat_ret = stat(full_path, statbuf);
+        if (stat_ret < 0) {
+            delete[] full_path;
+            return -errno;
+        }
+
+        int close_ret = close(open_ret);
+        if (close_ret < 0) {
+            delete[] full_path;
+            return -errno;
+        }   
+    // File is open
+    } else {
+        int access_mode = state_ref->open_files[path_string].client_flags & O_ACCMODE;
+        bool use_from_cache = helpers::use_file_from_cache(full_path, (char* )path, state_ref);
+        
+        if (!use_from_cache && access_mode == O_RDONLY) {
+            int download_ret = helpers::download_file((char* )path, full_path, state_ref);
+            if (download_ret < 0) {
+                delete[] full_path;
+                return download_ret;
+            }
+            state_ref->open_files[path_string].tc = time(0);
+        };
+
+        int stat_ret = stat(full_path, statbuf);
+        if (stat_ret < 0) {
+            delete[] full_path;
+            return -errno;
+        }
+    }
+
+    delete[] full_path;
+    return 0;
 }
 
 // CREATE, OPEN AND CLOSE
 int watdfs_cli_mknod(void *userdata, const char *path, mode_t mode, dev_t dev) {
-    return RPC::mknod_rpc(userdata, path, mode, dev);
+    struct state *state_ref = (struct state*) userdata;
+    char *full_path = helpers::full_path(state_ref, (char *)path);
+    std::string path_string = std::string(full_path);
+
+    // File has not been opened yet
+    if (state_ref->open_files.find(path_string) == state_ref->open_files.end()) {
+        int mknod_ret = mknod(full_path, mode, dev);
+        if (mknod_ret < 0) {
+            delete[] full_path;
+            return -errno;
+        }
+
+        int upload_ret = helpers::upload_file(full_path, (char*)path, state_ref);
+        delete [] full_path;
+        return upload_ret;
+    } else {
+    // File is open
+        int access_mode = state_ref->open_files[path_string].client_flags & O_ACCMODE;
+        if (access_mode == O_RDONLY) return -EMFILE;
+
+        int mknod_ret = mknod(full_path, mode, dev);
+        if (mknod_ret < 0) {
+            delete[] full_path;
+            return -errno;
+        }
+
+        bool is_fresh = helpers::use_file_from_cache(full_path, (char* )path, state_ref);
+        if (!is_fresh) {
+            int upload_ret = helpers::upload_file(full_path, (char*)path, state_ref);
+            state_ref->open_files[path_string].tc = time(0);
+            delete[] full_path;
+            return upload_ret;
+        }
+
+        return 0;
+    }
 }
 
 
@@ -416,7 +500,64 @@ int watdfs_cli_write(void *userdata, const char *path, const char *buf,
 }
 
 int watdfs_cli_truncate(void *userdata, const char *path, off_t newsize) {
-    return RPC::truncate_rpc(userdata, path, newsize);
+    struct state *state_ref = (struct state*) userdata;
+    char *full_path = helpers::full_path(state_ref, (char *)path);
+    std::string path_string = std::string(full_path);
+
+    // File has not been opened yet
+    if (state_ref->open_files.find(path_string) == state_ref->open_files.end()) {
+        // Download file
+        int download_ret = helpers::download_file((char* )path, full_path, state_ref);
+        if (download_ret < 0) {
+            delete[] full_path;
+            return download_ret;
+        }
+        // Open file on client
+        int open_ret = open(full_path, O_RDWR); 
+        if (open_ret < 0) {
+            delete[] full_path;
+            return -errno;
+        }
+        // Truncate file on client
+        int truncate_ret = truncate(full_path, newsize);
+        if(truncate_ret < 0) {
+            delete[] full_path;
+            return -errno;
+        }
+        // Upload file to server
+        int upload_ret = helpers::upload_file(full_path, (char*)path, state_ref);
+        if (upload_ret < 0) {
+            delete[] full_path;
+            return upload_ret;
+        }
+        // Close file on client
+        int close_ret = close(open_ret);
+        if (close_ret < 0) {
+            delete[] full_path;
+            return -errno;
+        }
+    } else {
+    // File is open
+        int access_mode = state_ref->open_files[path_string].client_flags & O_ACCMODE;
+        if (access_mode == O_RDONLY) return -EMFILE;
+        // Truncate file on client
+        int truncate_ret = truncate(full_path, newsize);
+        if(truncate_ret < 0) {
+            delete[] full_path;
+            return -errno;
+        } 
+        // Write freshness check
+        bool is_fresh = helpers::use_file_from_cache(full_path, (char* )path, state_ref);
+        if (!is_fresh) {
+            int upload_ret = helpers::upload_file(full_path, (char*)path, state_ref);
+            state_ref->open_files[path_string].tc = time(0);
+            delete[] full_path;
+            return upload_ret;
+        }
+    }
+
+    delete[] full_path;
+    return 0;
 }
 
 int watdfs_cli_fsync(void *userdata, const char *path,
@@ -451,7 +592,65 @@ int watdfs_cli_fsync(void *userdata, const char *path,
 // CHANGE METADATA
 int watdfs_cli_utimensat(void *userdata, const char *path,
                        const struct timespec ts[2]) {
-    // Called during close, but possibly asynchronously.
+    struct state *state_ref = (struct state*) userdata;
+    char *full_path = helpers::full_path(state_ref, (char *)path);
+    std::string path_string = std::string(full_path);
+
+    // File has not been opened yet
+    if (state_ref->open_files.find(path_string) == state_ref->open_files.end()) {
+        // Download file
+        int download_ret = helpers::download_file((char* )path, full_path, state_ref);
+        if (download_ret < 0) {
+            delete[] full_path;
+            return download_ret;
+        }
+        // Open file on client
+        int open_ret = open(full_path, O_RDWR); 
+        if (open_ret < 0) {
+            delete[] full_path;
+            return -errno;
+        }
+        // Utimensat file on client
+        int utimensat_ret = utimensat(0, full_path, ts, 0);
+        if(utimensat_ret < 0) {
+            delete[] full_path;
+            return -errno;
+        }
+        // Upload file to server
+        int upload_ret = helpers::upload_file(full_path, (char*)path, state_ref);
+        if (upload_ret < 0) {
+            delete[] full_path;
+            return upload_ret;
+        }
+        // Close file on client
+        int close_ret = close(open_ret);
+        if (close_ret < 0) {
+            delete[] full_path;
+            return -errno;
+        }
+    } else {
+    // File is open
+        int access_mode = state_ref->open_files[path_string].client_flags & O_ACCMODE;
+        if (access_mode == O_RDONLY) return -EMFILE;
+        // Utimensat file on client
+        int utimensat_ret = utimensat(0, full_path, ts, 0);
+        if(utimensat_ret < 0) {
+            delete[] full_path;
+            return -errno;
+        }
+        // Write freshness check
+        bool is_fresh = helpers::use_file_from_cache(full_path, (char* )path, state_ref);
+        if (!is_fresh) {
+            int upload_ret = helpers::upload_file(full_path, (char*)path, state_ref);
+            state_ref->open_files[path_string].tc = time(0);
+            delete[] full_path;
+            return upload_ret;
+        }
+    }
+
+    delete[] full_path;
+    return 0;
+ 
     return RPC::utimensat_rpc(userdata, path, ts);
 }
 
