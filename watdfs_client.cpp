@@ -39,18 +39,20 @@ namespace helpers {
         int get_attr = RPC::get_attr_rpc((void* )userdata, path, statbuf);
 
         if (get_attr < 0) {
+            DLOG("download - Could not download file - file %s not found on server.", path);
             delete statbuf;
             delete fi;
             return get_attr;
         }
 
-        DLOG("File %s found on server.", path);
+        DLOG("download - File %s found on server.", path);
 
         size_t size = statbuf->st_size;
 
         int fh = open(full_path, O_RDWR);
         if (fh < 0) {
             // Create the file
+            DLOG("download - Creating file %s on client.", full_path);
             mknod(full_path, statbuf->st_mode, statbuf->st_dev);
             fh = open(full_path, O_RDWR);
         }
@@ -60,52 +62,101 @@ namespace helpers {
         // TRUNCATE THE FILE AT THE CLIENT
         int trunc_ret = truncate(full_path, (off_t) size);
 
-        if (trunc_ret < 0) func_ret = -errno;
+        if (trunc_ret < 0) {
+            DLOG("download - Could not truncate file %s on client.", full_path);
+            func_ret = -errno;
+            delete statbuf;
+            delete fi;
+            return func_ret;
+        }
 
         int lock_ret = RPC::lock_rpc(path, RW_READ_LOCK);
+        if (lock_ret < 0) {
+            DLOG("download - Could not lock file %s on server.", path);
+            delete statbuf;
+            delete fi;
+            return lock_ret;
+        }
 
         char *buffer = new char[size];
 
         // Open file on server
         int open_ret = RPC::open_rpc((void*) userdata, path, fi);
-        if (open_ret < 0) func_ret = open_ret;
+        if (open_ret < 0) {
+            DLOG("download - Could not open file %s on server.", path);
+            delete[] buffer;
+            delete statbuf;
+            delete fi;
+            return open_ret;
+        }
 
-        DLOG("File %s opened on server.", path);
+        DLOG("download - File %s opened on server.", path);
 
         // Read file into local buffer
         int read_ret = RPC::read_rpc((void*) userdata, path, buffer, size, 0, fi);
-        if (read_ret < 0) func_ret = read_ret;
+        if (read_ret < 0) {
+            DLOG("download - Could not read file %s on server.", path);
+            delete[] buffer;
+            delete statbuf;
+            delete fi;
+            return read_ret;
+        }
 
-        DLOG("File %s read on server.", path);
+        DLOG("download - File %s read on server.", path);
 
         int unlock_ret = RPC::unlock_rpc(path, RW_READ_LOCK);
+        if (unlock_ret < 0) {
+            DLOG("download - Could not unlock file %s on server.", path);
+            delete[] buffer;
+            delete statbuf;
+            delete fi;
+            return unlock_ret;
+        }
 
         // Write buffer into file handler
         int write_ret = pwrite(fh, buffer, size, 0);
 
         if (write_ret < 0) {
-            func_ret = -errno;
+            DLOG("download - Could not write file %s on client.", full_path);
             delete[] buffer;
             delete statbuf;
             delete fi;
-            return func_ret;
+            return write_ret;
         }
 
         // Update metadata at the client
         struct timespec ts[2] = { statbuf->st_mtim, statbuf->st_mtim };
         int utime_ret = utimensat(0, full_path, ts, 0);
 
+        if (utime_ret < 0) {
+            DLOG("download - Could not utimensat file %s on client.", full_path);
+            delete[] buffer;
+            delete statbuf;
+            delete fi;
+            return utime_ret;
+        }
+
         // Download complete, release on server
         int release_ret = RPC::release_rpc((void*) userdata, path, fi);
-        if (release_ret < 0) func_ret = release_ret;
-        DLOG("File %s released on server.", path);
+        if (release_ret < 0) {
+            DLOG("download - Could not release file %s on server.", path);
+            delete[] buffer;
+            delete statbuf;
+            delete fi;
+            return release_ret;
+        }
+
+        DLOG("download - File %s released on server.", path);
 
         int close_ret = close(utime_ret);
+        if (close_ret < 0) {
+            DLOG("download - Could not close file %s on client.", full_path);
+        }
 
         delete[] buffer;
         delete fi;
         delete statbuf;
-        return func_ret;
+        return close_ret;
     }
 
     char *full_path(struct state *userdata, char *path) {
@@ -121,62 +172,125 @@ namespace helpers {
     }
 
     int upload_file(char *full_path, char *path, struct state *userdata) {
+        int func_ret = 0;
         struct fuse_file_info *fi = new struct fuse_file_info;
 
         int lock_ret = RPC::lock_rpc(path, RW_WRITE_LOCK);
+        if (lock_ret < 0) {
+            DLOG("upload - Could not lock file %s on server.", path);
+            delete fi;
+            return lock_ret;
+        }
 
         struct stat *buf = new struct stat;
         fi->flags = O_RDWR;
         
         int func_ret = 0;
-
         int stat_ret = stat(full_path, buf);
-
+        
         if ( stat_ret < 0) {
-            func_ret = -errno;
+            DLOG("upload - Could not stat file %s on client.", full_path);
             RPC::unlock_rpc(path, RW_WRITE_LOCK);
-            return func_ret;
+            delete fi;
+            return stat_ret;
         }
 
         int open_ret = RPC::open_rpc((void*) userdata, path, fi);
 
         if (open_ret < 0) {
+            DLOG("upload - Could not open file %s on server, will mkdod on server.", path);
             int mknod_ret = RPC::mknod_rpc((void*) userdata, path, buf->st_mode, buf->st_dev);
+            
+            if (mknod_ret < 0) {
+                DLOG("upload - Could not mknod file %s on server.", path);
+                RPC::unlock_rpc(path, RW_WRITE_LOCK);
+                delete fi;
+                delete buf;
+                return mknod_ret;
+            }
+
             open_ret = RPC::open_rpc((void*)userdata, path, fi);
         }
 
         if (open_ret < 0) {
-            func_ret = -errno;
+            DLOG("upload - Could not open file %s on server.", path);
             RPC::unlock_rpc(path, RW_WRITE_LOCK);
-            return func_ret;
+            return open_ret;
         }
 
-        open_ret = open(full_path, O_RDONLY);
+        int client_open_ret = open(full_path, O_RDONLY);
+        
+        if (client_open_ret < 0) {
+            DLOG("upload - Could not open file %s on client.", full_path);
+            RPC::unlock_rpc(path, RW_WRITE_LOCK);
+            delete fi;
+            delete buf;
+            return -errno;
+        }
+
         fi->flags = O_RDWR;
 
         char *buffer = new char[buf->st_size];
-        int read_ret = pread(open_ret, buffer, buf->st_size, 0);
+        int read_ret = pread(client_open_ret, buffer, buf->st_size, 0);
 
         if(read_ret < 0) {
-            func_ret = -errno;
+            DLOG("upload - Could not read file %s on client.", full_path);
+            RPC::unlock_rpc(path, RW_WRITE_LOCK);
+            delete fi;
+            delete buf;
+            delete[] buffer;
+            return -errno;
         }
 
         int trunc_ret = RPC::truncate_rpc((void* )userdata, path, (off_t)buf->st_size);
-        if (trunc_ret < 0) func_ret = trunc_ret;
+        if (trunc_ret < 0) {
+            DLOG("upload - Could not truncate file %s on server.", path);
+            RPC::unlock_rpc(path, RW_WRITE_LOCK);
+            delete fi;
+            delete buf;
+            delete[] buffer;
+            return trunc_ret;
+        }
 
         int write_ret = RPC::write_rpc((void*)userdata, path, buffer, (off_t)buf->st_size, 0, fi);
-        if (write_ret < 0) func_ret = write_ret;
+        if (write_ret < 0) {
+            DLOG("upload - Could not write file %s on server.", path);
+            RPC::unlock_rpc(path, RW_WRITE_LOCK);
+            delete fi;
+            delete buf;
+            delete[] buffer;
+            return write_ret;
+        }
 
         int unlock_ret = RPC::unlock_rpc(path, RW_WRITE_LOCK);
+        if (unlock_ret < 0) {
+            DLOG("upload - Could not unlock file %s on server.", path);
+            delete fi;
+            delete buf;
+            delete[] buffer;
+            return unlock_ret;
+        }
 
         struct timespec ts[2];
         ts[0] = (struct timespec)(buf->st_mtim);
         ts[1] = (struct timespec)(buf->st_mtim);
 
         int utim_ret = RPC::utimensat_rpc((void*) userdata, path, ts);
-        if (utim_ret < 0) func_ret = utim_ret;
+        if (utim_ret < 0) {
+            DLOG("upload - Could not utimensat file %s on server.", path);
+            delete fi;
+            delete buf;
+            delete[] buffer;
+            return utim_ret;
+        }
         int get_attr_ret = RPC::get_attr_rpc((void*) userdata, path, buf);
-        if (get_attr_ret < 0 ) func_ret = get_attr_ret;
+        if (get_attr_ret < 0 ) {
+            DLOG("upload - Could not get_attr file %s on server.", path);
+            delete fi;
+            delete buf;
+            delete[] buffer;
+            return get_attr_ret;
+        }
 
         delete[] buffer;
         delete fi;
@@ -206,6 +320,7 @@ namespace helpers {
 
         int server_getattr = RPC::get_attr_rpc((void* )userdata, path, server);
         if(server_getattr < 0) {
+            DLOG("freshness - Could not get_attr file %s on server.", path);
             delete server;
             return false;
         }
@@ -279,24 +394,28 @@ int watdfs_cli_getattr(void *userdata, const char *path, struct stat *statbuf) {
     if (state_ref->open_files.find(path_string) == state_ref->open_files.end()) {
         int download_ret = helpers::download_file((char* )path, full_path, state_ref);
         if (download_ret < 0) {
+            DLOG("getattr - Could not download file %s, with error code %d", path, download_ret);
             delete[] full_path;
             return download_ret;
         }
 
         int open_ret = open(full_path, O_RDONLY);
         if (open_ret < 0) {
+            DLOG("getattr - Could not open file %s, with error code %d", full_path, -errno);
             delete[] full_path;
             return -errno;
         }
 
         int stat_ret = stat(full_path, statbuf);
         if (stat_ret < 0) {
+            DLOG("getattr - Could not stat file %s, with error code %d", full_path, -errno);
             delete[] full_path;
             return -errno;
         }
 
         int close_ret = close(open_ret);
         if (close_ret < 0) {
+            DLOG("getattr - Could not close file %s, with error code %d", full_path, -errno);
             delete[] full_path;
             return -errno;
         }   
@@ -308,6 +427,7 @@ int watdfs_cli_getattr(void *userdata, const char *path, struct stat *statbuf) {
         if (!use_from_cache && access_mode == O_RDONLY) {
             int download_ret = helpers::download_file((char* )path, full_path, state_ref);
             if (download_ret < 0) {
+                DLOG("getattr - Could not download file %s, with error code %d", path, download_ret);
                 delete[] full_path;
                 return download_ret;
             }
@@ -316,6 +436,7 @@ int watdfs_cli_getattr(void *userdata, const char *path, struct stat *statbuf) {
 
         int stat_ret = stat(full_path, statbuf);
         if (stat_ret < 0) {
+            DLOG("getattr - Could not stat file %s, with error code %d", full_path, -errno);
             delete[] full_path;
             return -errno;
         }
@@ -335,11 +456,17 @@ int watdfs_cli_mknod(void *userdata, const char *path, mode_t mode, dev_t dev) {
     if (state_ref->open_files.find(path_string) == state_ref->open_files.end()) {
         int mknod_ret = mknod(full_path, mode, dev);
         if (mknod_ret < 0) {
+            DLOG("mknod - Could not mknod file %s, with error code %d", full_path, -errno);
             delete[] full_path;
             return -errno;
         }
 
         int upload_ret = helpers::upload_file(full_path, (char*)path, state_ref);
+        
+        if (upload_ret < 0) {
+            DLOG("mknod - Could not upload file %s, with error code %d", full_path, upload_ret);
+        }
+
         delete [] full_path;
         return upload_ret;
     } else {
@@ -349,6 +476,7 @@ int watdfs_cli_mknod(void *userdata, const char *path, mode_t mode, dev_t dev) {
 
         int mknod_ret = mknod(full_path, mode, dev);
         if (mknod_ret < 0) {
+            DLOG("mknod - Could not mknod file %s, with error code %d", full_path, -errno);
             delete[] full_path;
             return -errno;
         }
@@ -356,6 +484,9 @@ int watdfs_cli_mknod(void *userdata, const char *path, mode_t mode, dev_t dev) {
         bool is_fresh = helpers::use_file_from_cache(full_path, (char* )path, state_ref);
         if (!is_fresh) {
             int upload_ret = helpers::upload_file(full_path, (char*)path, state_ref);
+            if (upload_ret < 0) {
+                DLOG("mknod - Could not upload file %s, with error code %d", full_path, upload_ret);
+            }
             state_ref->open_files[path_string].tc = time(0);
             delete[] full_path;
             return upload_ret;
@@ -375,7 +506,7 @@ int watdfs_cli_open(void *userdata, const char *path,
 
     // If file is open, return error
     if (state_ref->open_files.find(path_string) != state_ref->open_files.end()) {
-        DLOG("Trying to open %s which is already open.", full_path);
+        DLOG("open - Trying to open %s which is already open.", full_path);
         delete[] full_path;
         return -EMFILE;
     }
@@ -387,31 +518,45 @@ int watdfs_cli_open(void *userdata, const char *path,
     int func_ret = 0;
 
     if (get_attr_ret < 0) {
-        // Do something, file doesn't exist on the server
-    } else {
-        int download_ret = helpers::download_file(full_path, (char* )path, (state* ) userdata);
-        if (download_ret < 0) func_ret = download_ret;
-    }
-
-    if (func_ret >= 0) {
-        int open_ret = open(full_path, fi->flags);
-
-        if (open_ret < 0) {
+        if (fi->flags != O_CREAT) {
+            DLOG("open - Could not get_attr file %s on server, with error code %d. File does not exist, and was trying to be access without O_CREAT flag", path, get_attr_ret);
             delete[] full_path;
             delete buf;
-            return -errno;
+            return get_attr_ret;
         }
 
-        struct meta file = { fi->flags, open_ret, time(0) }; 
-        ((struct state*) userdata)->open_files[std::string(full_path)] = file;
-        func_ret = 0;
-    } else {
-        func_ret = -errno;
+        int open_ret = RPC::open_rpc(userdata, path, fi);
+        if (open_ret < 0) {
+            DLOG("open - Could not open file %s on server, with error code %d", path, open_ret);
+            delete[] full_path;
+            delete buf;
+            return open_ret;
+        }
     }
+
+    int download_ret = helpers::download_file(full_path, (char* )path, state_ref);
+    if (download_ret < 0) {
+        DLOG("open - Could not download file %s, with error code %d", path, download_ret);
+        delete[] full_path;
+        delete buf;
+        return download_ret;
+    }
+
+    int open_ret = open(full_path, fi->flags);
+
+    if (open_ret < 0) {
+        DLOG("open - Could not open file %s, with error code %d", full_path, -errno);
+        delete[] full_path;
+        delete buf;
+        return -errno;
+    }
+
+    struct meta file = { fi->flags, open_ret, time(0) }; 
+    ((struct state*) userdata)->open_files[std::string(full_path)] = file;
 
     delete[] full_path;
     delete buf;
-    return func_ret;
+    return 0;
 }
 
 int watdfs_cli_release(void *userdata, const char *path,
@@ -425,14 +570,17 @@ int watdfs_cli_release(void *userdata, const char *path,
     if ((file_access_mode & O_ACCMODE) != O_RDONLY) {
         int push_ret = helpers::upload_file(full_path, (char*)path, cast_state);
         if (push_ret < 0) {
-            DLOG("Uploading file failed with: '%d'", push_ret);
+            DLOG("release - Uploading file failed with: '%d'", push_ret);
+            delete[] full_path;
             return push_ret;
         }
     }
 
     int close_ret = close(cast_state->open_files[std::string(full_path)].file_handler);
     if (close_ret < 0) {
-        func_ret = -errno;
+        DLOG("release - Closing file failed with: '%d'", close_ret);
+        delete[] full_path;
+        return -errno;
     }  else {
         cast_state->open_files.erase(std::string(full_path));
     }
@@ -450,6 +598,7 @@ int watdfs_cli_read(void *userdata, const char *path, char *buf, size_t size,
 
     if(cast_state->open_files.find(file_string) == cast_state->open_files.end()) {
         // File isn't open
+        DLOG("read - File %s not open.", full_path);
         delete[] full_path;
         return -EMFILE;
     }
@@ -458,7 +607,11 @@ int watdfs_cli_read(void *userdata, const char *path, char *buf, size_t size,
 
     if (!use_from_cache) {
         int download_code = helpers::download_file((char* )path, full_path, cast_state);
-        if (download_code < 0) return -EMFILE;
+        if (download_code < 0) {
+            DLOG("read - Could not download file %s, with error code %d", path, download_code);
+            delete[] full_path;
+            return -EMFILE;
+        }
 
         cast_state->open_files[file_string].tc = time(0);
     }
@@ -475,27 +628,33 @@ int watdfs_cli_write(void *userdata, const char *path, const char *buf,
     std::string file_string = std::string(full_path);
 
     if(cast_state->open_files.find(file_string) == cast_state->open_files.end()) {
+        DLOG("write - File %s not open.", full_path);
         delete[] full_path;
         return -EMFILE;
     }
-
-    int func_ret = 0;
 
     int write_code = pwrite(cast_state->open_files[file_string].file_handler, buf, size, offset);
 
     if (write_code >= 0) {
         bool use_from_cache = helpers::use_file_from_cache(full_path, (char* )path, cast_state);
         if (!use_from_cache) {
-            func_ret = helpers::upload_file(full_path, (char* ) path, cast_state);
+            int upload_ret = helpers::upload_file(full_path, (char* ) path, cast_state);
+            if (upload_ret < 0) {
+                DLOG("write - Could not upload file %s, with error code %d", full_path, upload_ret);
+                delete[] full_path;
+                return upload_ret;
+            }
+
             cast_state->open_files[file_string].tc = time(0);
         }
     } else {
-        func_ret = -errno;
+        DLOG("write - Could not write to file %s, with error code %d", full_path, -errno);
+        delete[] full_path;
+        return -errno;
     } 
 
     delete[] full_path;
     
-    if (func_ret < 0) return func_ret;
     return write_code;
 }
 
@@ -509,30 +668,35 @@ int watdfs_cli_truncate(void *userdata, const char *path, off_t newsize) {
         // Download file
         int download_ret = helpers::download_file((char* )path, full_path, state_ref);
         if (download_ret < 0) {
+            DLOG("truncate - Could not download file %s, with error code %d", path, download_ret);
             delete[] full_path;
             return download_ret;
         }
         // Open file on client
         int open_ret = open(full_path, O_RDWR); 
         if (open_ret < 0) {
+            DLOG("truncate - Could not open file %s, with error code %d", full_path, -errno);
             delete[] full_path;
             return -errno;
         }
         // Truncate file on client
         int truncate_ret = truncate(full_path, newsize);
         if(truncate_ret < 0) {
+            DLOG("truncate - Could not truncate file %s, with error code %d", full_path, -errno);
             delete[] full_path;
             return -errno;
         }
         // Upload file to server
         int upload_ret = helpers::upload_file(full_path, (char*)path, state_ref);
         if (upload_ret < 0) {
+            DLOG("truncate - Could not upload file %s, with error code %d", full_path, upload_ret);
             delete[] full_path;
             return upload_ret;
         }
         // Close file on client
         int close_ret = close(open_ret);
         if (close_ret < 0) {
+            DLOG("truncate - Could not close file %s, with error code %d", full_path, -errno);
             delete[] full_path;
             return -errno;
         }
@@ -543,6 +707,7 @@ int watdfs_cli_truncate(void *userdata, const char *path, off_t newsize) {
         // Truncate file on client
         int truncate_ret = truncate(full_path, newsize);
         if(truncate_ret < 0) {
+            DLOG("truncate - Could not truncate file %s, with error code %d", full_path, -errno);
             delete[] full_path;
             return -errno;
         } 
@@ -550,6 +715,12 @@ int watdfs_cli_truncate(void *userdata, const char *path, off_t newsize) {
         bool is_fresh = helpers::use_file_from_cache(full_path, (char* )path, state_ref);
         if (!is_fresh) {
             int upload_ret = helpers::upload_file(full_path, (char*)path, state_ref);
+            if(upload_ret < 0) {
+                DLOG("truncate - Could not upload file %s, with error code %d", full_path, upload_ret);
+                delete[] full_path;
+                return upload_ret;
+            }
+
             state_ref->open_files[path_string].tc = time(0);
             delete[] full_path;
             return upload_ret;
@@ -568,17 +739,20 @@ int watdfs_cli_fsync(void *userdata, const char *path,
     std::string file_string = std::string(full_path);
 
     if(cast_state->open_files.find(file_string) == cast_state->open_files.end()) {
+        DLOG("fsync - File %s not open.", full_path);
         delete[] full_path;
         return -EMFILE;
     }
 
     // If file is opened in READ MODE, cannot flush
     if ((cast_state->open_files[file_string].client_flags & O_ACCMODE) == O_RDONLY) {
+        DLOG("fsync - File %s opened in READ MODE.", full_path);
         return -EPERM;
     }
 
     int push_update = helpers::upload_file(full_path, (char* )path, cast_state); 
     if (push_update < 0) {
+        DLOG("fsync - Could not upload file %s, with error code %d", full_path, push_update);
         delete[] full_path;
         return push_update;
     }
@@ -601,30 +775,35 @@ int watdfs_cli_utimensat(void *userdata, const char *path,
         // Download file
         int download_ret = helpers::download_file((char* )path, full_path, state_ref);
         if (download_ret < 0) {
+            DLOG("utimensat - Could not download file %s, with error code %d", path, download_ret);
             delete[] full_path;
             return download_ret;
         }
         // Open file on client
         int open_ret = open(full_path, O_RDWR); 
         if (open_ret < 0) {
+            DLOG("utimensat - Could not open file %s, with error code %d", full_path, -errno);
             delete[] full_path;
             return -errno;
         }
         // Utimensat file on client
         int utimensat_ret = utimensat(0, full_path, ts, 0);
         if(utimensat_ret < 0) {
+            DLOG("utimensat - Could not utimensat file %s, with error code %d", full_path, -errno);
             delete[] full_path;
             return -errno;
         }
         // Upload file to server
         int upload_ret = helpers::upload_file(full_path, (char*)path, state_ref);
         if (upload_ret < 0) {
+            DLOG("utimensat - Could not upload file %s, with error code %d", full_path, upload_ret);
             delete[] full_path;
             return upload_ret;
         }
         // Close file on client
         int close_ret = close(open_ret);
         if (close_ret < 0) {
+            DLOG("utimensat - Could not close file %s, with error code %d", full_path, -errno);
             delete[] full_path;
             return -errno;
         }
@@ -635,6 +814,7 @@ int watdfs_cli_utimensat(void *userdata, const char *path,
         // Utimensat file on client
         int utimensat_ret = utimensat(0, full_path, ts, 0);
         if(utimensat_ret < 0) {
+            DLOG("utimensat - Could not utimensat file %s, with error code %d", full_path, -errno);
             delete[] full_path;
             return -errno;
         }
@@ -642,6 +822,11 @@ int watdfs_cli_utimensat(void *userdata, const char *path,
         bool is_fresh = helpers::use_file_from_cache(full_path, (char* )path, state_ref);
         if (!is_fresh) {
             int upload_ret = helpers::upload_file(full_path, (char*)path, state_ref);
+            if(upload_ret < 0) {
+                DLOG("utimensat - Could not upload file %s, with error code %d", full_path, upload_ret);
+                delete[] full_path;
+                return upload_ret;
+            }
             state_ref->open_files[path_string].tc = time(0);
             delete[] full_path;
             return upload_ret;
@@ -650,7 +835,5 @@ int watdfs_cli_utimensat(void *userdata, const char *path,
 
     delete[] full_path;
     return 0;
- 
-    return RPC::utimensat_rpc(userdata, path, ts);
 }
 
