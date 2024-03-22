@@ -360,7 +360,17 @@ int watdfs_lock(int *argTypes, void**args) {
 
     int *ret = (int*)args[2];
 
-    rw_lock_t *lock = files[std::string(short_path)].lock;
+    std::string path_string = std::string(short_path);
+
+    if (files.find(path_string) == files.end()) {
+        AccessType new_access_type = *mode == RW_READ_LOCK ? READ : WRITE;
+        // Create a new struct for this file
+        struct file_handler file_data = { new_access_type, new rw_lock_t };
+        rw_lock_init(file_data.lock);
+        files[path_string] = file_data;
+    }
+
+    rw_lock_t *lock = files[path_string].lock;
 
     int lock_ret = rw_lock_lock(lock, *mode);
     if (lock_ret < 0) {
