@@ -21,6 +21,7 @@ INIT_LOG
 struct meta {
   int client_flags;
   int file_handler;
+  int server_file_handler;
   time_t tc;
 };
 
@@ -253,6 +254,15 @@ namespace helpers {
                 delete server_buf;
                 return open_ret;
             }
+        } else {
+            if (userdata->open_files.find(full_path) == userdata->open_files.end()) {
+                debug("upload - FILE IS NOT OPEN AND IT SHOULD BE");
+                delete client_buf;
+                delete server_buf;
+                return -2;
+            }
+
+            server_file_info->fh = userdata->open_files[full_path].server_file_handler;
         }
 
         
@@ -561,15 +571,31 @@ int watdfs_cli_open(void *userdata, const char *path,
             delete[] full_path;
             delete buf;
             return open_ret;
+        } else {
+            int download_ret = helpers::download_file((char* )path, full_path, state_ref);
+            if (download_ret < 0) {
+                debug("open - Could not download file %s, with error code %d", path, download_ret);
+                delete[] full_path;
+                delete buf;
+                return download_ret;
+            }
         }
-    }
+    } else {
+        int download_ret = helpers::download_file((char* )path, full_path, state_ref);
+        if (download_ret < 0) {
+            debug("open - Could not download file %s, with error code %d", path, download_ret);
+            delete[] full_path;
+            delete buf;
+            return download_ret;
+        }
 
-    int download_ret = helpers::download_file((char* )path, full_path, state_ref);
-    if (download_ret < 0) {
-        debug("open - Could not download file %s, with error code %d", path, download_ret);
-        delete[] full_path;
-        delete buf;
-        return download_ret;
+        int open_ret = RPC::open_rpc(userdata, path, fi);
+        if (open_ret < 0) {
+            debug("open - Could not open file %s on server, with error code %d", path, open_ret);
+            delete[] full_path;
+            delete buf;
+            return open_ret;
+        }
     }
 
     int open_ret = open(full_path, fi->flags);
@@ -581,7 +607,10 @@ int watdfs_cli_open(void *userdata, const char *path,
         return -errno;
     }
 
-    struct meta file = { fi->flags, open_ret, time(0) }; 
+    debug("server file handle: %d", fi->fh);
+    debug("client file handle: %d", open_ret);
+
+    struct meta file = { fi->flags, open_ret, fi->fh, time(0) }; 
     ((struct state*) userdata)->open_files[std::string(full_path)] = file;
 
     delete[] full_path;
@@ -598,7 +627,6 @@ int watdfs_cli_release(void *userdata, const char *path,
     int func_ret = 0;
 
     debug("Calling release on %s", full_path);
-
 
     if ((file_access_mode & O_ACCMODE) != O_RDONLY) {
         int push_ret = helpers::upload_file(full_path, (char*)path, cast_state);
