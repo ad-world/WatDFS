@@ -697,6 +697,21 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    /* Unlock registration*/
+    {
+
+        int argTypes[4];
+        argTypes[0] = (1 << ARG_INPUT) | (1 << ARG_ARRAY) | (ARG_CHAR << 16) | 1u;
+        argTypes[1] = (1 << ARG_INPUT) | (ARG_INT << 16);
+        argTypes[2] = (1 << ARG_OUTPUT) | (ARG_INT << 16);
+        argTypes[3] = 0;
+
+        ret = rpcRegister((char*)"unlock", argTypes, watdfs_unlock);
+        if (ret < 0) {
+            debug("rpcRegister failed to register unlock with '%d'", ret);
+        }
+    }
+
     // TODO: Hand over control to the RPC library by calling `rpcExecute`.
     int rpc_ret = rpcExecute();
     (void)rpc_ret;

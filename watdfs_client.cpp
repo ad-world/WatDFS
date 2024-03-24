@@ -125,6 +125,17 @@ namespace helpers {
 
         debug("download - File %s opened on server.", path);
 
+        int lock_ret = RPC::lock_rpc(path, RW_READ_LOCK);
+        if (lock_ret < 0) {
+            debug("download - Could not open file %s on server.", path);
+            delete[] buffer;
+            delete statbuf;
+            delete fi;
+            return open_ret;
+        }
+
+        debug("download - File %s locked on server in read mode.", path);
+
         // Read file into local buffer
         int read_ret = RPC::read_rpc((void*) userdata, path, buffer, size, 0, fi);
         if (read_ret < 0) {
@@ -137,14 +148,16 @@ namespace helpers {
 
         debug("download - File %s read on server.", path);
 
-        // int unlock_ret = RPC::unlock_rpc(path, RW_READ_LOCK);
-        // if (unlock_ret < 0) {
-        //     debug("download - Could not unlock file %s on server.", path);
-        //     delete[] buffer;
-        //     delete statbuf;
-        //     delete fi;
-        //     return unlock_ret;
-        // }
+        int unlock_ret = RPC::unlock_rpc(path, RW_READ_LOCK);
+        if (unlock_ret < 0) {
+            debug("download - Could not unlock file %s on server.", path);
+            delete[] buffer;
+            delete statbuf;
+            delete fi;
+            return unlock_ret;
+        }
+
+        debug("download - File %s unlocked on server.", path);
 
         // Write buffer into file handler
         int write_ret = pwrite(fh, buffer, size, 0);
@@ -210,12 +223,7 @@ namespace helpers {
 
     int upload_file(char *full_path, char *path, struct state *userdata) {
         int func_ret = 0;
-        // int lock_ret = RPC::lock_rpc(path, RW_WRITE_LOCK);
-        // if (lock_ret < 0) {
-        //     debug("upload - Could not lock file %s on server.", path);
-        //     delete fi;
-        //     return lock_ret;
-        // }
+  
 
         struct stat *client_buf = new struct stat;
         struct stat *server_buf = new struct stat;
@@ -224,7 +232,6 @@ namespace helpers {
         
         if ( stat_ret < 0) {
             debug("upload - Could not stat file %s on client.", full_path);
-            // RPC::unlock_rpc(path, RW_WRITE_LOCK);
             return stat_ret;
         }
 
@@ -238,7 +245,6 @@ namespace helpers {
             
             if (mknod_ret < 0) {
                 debug("upload - Could not mknod file %s on server, with error code", path, mknod_ret);
-                // RPC::unlock_rpc(path, RW_WRITE_LOCK);
                 delete client_buf;
                 delete server_buf;
                 return mknod_ret;
@@ -264,13 +270,11 @@ namespace helpers {
 
             server_file_info->fh = userdata->open_files[full_path].server_file_handler;
         }
-
         
         int client_open_ret = open(full_path, O_RDONLY);
         
         if (client_open_ret < 0) {
             debug("upload - Could not open file %s on client.", full_path);
-            // RPC::unlock_rpc(path, RW_WRITE_LOCK);
             delete client_buf;
             delete server_buf;
             return -errno;
@@ -281,17 +285,24 @@ namespace helpers {
 
         if(read_ret < 0) {
             debug("upload - Could not read file %s on client.", full_path);
-            // RPC::unlock_rpc(path, RW_WRITE_LOCK);
             delete client_buf;
             delete server_buf;
             delete[] buffer;
             return -errno;
         }
 
+        int lock_ret = RPC::lock_rpc(path, RW_WRITE_LOCK);
+        if (lock_ret < 0) {
+            debug("upload - Could not lock file %s on server.", path);
+            delete client_buf;
+            delete server_buf;
+            delete[] buffer;
+            return lock_ret;
+        }
+
         int trunc_ret = RPC::truncate_rpc((void* )userdata, path, (off_t)client_buf->st_size);
         if (trunc_ret < 0) {
             debug("upload - Could not truncate file %s on server.", path);
-            // RPC::unlock_rpc(path, RW_WRITE_LOCK);
             delete client_buf;
             delete server_buf;
             delete[] buffer;
@@ -301,7 +312,6 @@ namespace helpers {
         int write_ret = RPC::write_rpc((void*)userdata, path, buffer, (off_t)client_buf->st_size, 0, server_file_info);
         if (write_ret < 0) {
             debug("upload - Could not write file %s on server.", path);
-            // RPC::unlock_rpc(path, RW_WRITE_LOCK);
             delete client_buf;
             delete server_buf;
             delete[] buffer;
@@ -322,12 +332,20 @@ namespace helpers {
             return utim_ret;
         }
 
+        int unlock_ret = RPC::unlock_rpc(path, RW_WRITE_LOCK);
+        if (unlock_ret < 0) {
+            debug("upload - Could not unlock file %s on server.", path);
+            delete client_buf;
+            delete server_buf;
+            delete[] buffer;
+            return utim_ret;
+        }
+
         int close_ret = close(client_open_ret);
 
         delete[] buffer;
         delete client_buf;
         delete server_buf;
-
 
         return func_ret;
     }
