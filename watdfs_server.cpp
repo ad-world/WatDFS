@@ -17,6 +17,10 @@ INIT_LOG
 #include <map>
 #include "rw_lock.h"
 #include <string>
+#include <vector>
+#include <cstdarg>
+#include <cerrno>
+#include <iostream>
 
 // Global state server_persist_dir.
 char *server_persist_dir = nullptr;
@@ -33,6 +37,32 @@ struct file_handler {
     AccessType access_type;
     rw_lock_t * lock;
 };
+
+void debug(const char* format, ...) {
+    va_list args;
+    va_start(args, format);
+
+    // We need to safely determine the size of the formatted string.
+    // vsnprintf returns the number of characters (excluding the null terminator) 
+    // that would have been written if the buffer was large enough.
+    int size = vsnprintf(nullptr, 0, format, args) + 1; // Adding one for the null terminator
+    va_end(args);
+
+    if (size <= 0) {
+        std::cerr << "Error in formatting the debug log message." << std::endl;
+        return;
+    }
+
+    // Create a vector with the required size to hold the formatted string.
+    std::vector<char> buf(size);
+
+    va_start(args, format);
+    vsnprintf(buf.data(), size, format, args);
+    va_end(args);
+
+    // Output the formatted string to std::cerr
+    std::cerr << buf.data() << std::endl;
+}
 
 std::map<std::string, struct file_handler> files;
 
@@ -52,7 +82,7 @@ char *get_full_path(char *short_path) {
     strcpy(full_path, server_persist_dir);
     // Then append the path.
     strcat(full_path, short_path);
-    DLOG("Full path: %s\n", full_path);
+    debug("Full path: %s\n", full_path);
 
     return full_path;
 }
@@ -84,14 +114,14 @@ int watdfs_getattr(int *argTypes, void **args) {
         // If there is an error on the system call, then the return code should
         // be -errno.
         *ret = -errno;
-        DLOG("getattr failed with code '%d'", *ret);
+        debug("getattr failed with code '%d'", *ret);
 
     }
 
     // Clean up the full path, it was allocated on the heap.
     free(full_path);
 
-    //DLOG("Returning code: %d", *ret);
+    //debug("Returning code: %d", *ret);
     // The RPC call succeeded, so return 0.
     return 0;
 }
@@ -114,7 +144,7 @@ int watdfs_mknod(int *argTypes, void** args) {
     // If we found an error, update return code
     if (syscall < 0) {
         *ret = -errno;
-        DLOG("mknod failed with code '%d'", *ret);
+        debug("mknod failed with code '%d'", *ret);
     } else {
         *ret = syscall;
     }
@@ -158,20 +188,18 @@ int watdfs_open(int *argTypes, void **args) {
     }
 
     // Open file
-    DLOG("full_path: '%s', flags: '%d'", full_path, fi->flags);
+    debug("full_path: '%s', flags: '%d'", full_path, fi->flags);
     int syscall = open(full_path, fi->flags);
-
-
 
     if(syscall < 0) {
         *ret = -errno;
-        DLOG("open failed with code '%d'", *ret);
+        debug("open failed with code '%d'", *ret);
     } else {
         // Set file handle
-        DLOG("syscall is: '%d'", syscall);
+        debug("syscall is: '%d'", syscall);
         fi->fh = syscall;
         *ret = 0;
-        DLOG("new file handle: '%ld'", fi->fh);
+        debug("new file handle: '%ld'", fi->fh);
     }
 
     // Free full path
@@ -193,16 +221,17 @@ int watdfs_release(int *argTypes, void** args) {
     // Get full path
     char *full_path = get_full_path(short_path);
 
-    DLOG("closing file with fh '%ld'", fi->fh);
+    debug("closing file with fh '%ld'", fi->fh);
 
     int syscall = close(fi->fh);
 
     if (syscall < 0) {
         *ret = -errno;
-        DLOG("close failed with code '%d'", *ret);
+        debug("close failed with code '%d'", *ret);
 
     } else {
         *ret = syscall;
+        files.erase(std::string(full_path));
     }
 
     free(full_path);
@@ -225,7 +254,7 @@ int watdfs_fsync(int *argTypes, void **args) {
 
     if (syscall < 0) {
         *ret = -errno;
-        DLOG("fsync failed with code '%d'", syscall);
+        debug("fsync failed with code '%d'", syscall);
 
     } else {
         *ret = syscall;
@@ -251,7 +280,7 @@ int watdfs_utimensat(int* argTypes, void **args) {
 
     if (syscall < 0) {
         *ret = -errno;
-        DLOG("utimensat failed with code '%d'", syscall);
+        debug("utimensat failed with code '%d'", syscall);
 
     } else {
         *ret = syscall;
@@ -281,15 +310,15 @@ int watdfs_read(int* argTypes, void** args)  {
     *ret = 0;
     int syscall = pread(fi->fh, buf, *size, *off);
 
-    DLOG("reading file with fh '%ld'", fi->fh);
-    DLOG("requesting to read '%ld' bytes", *size);
+    debug("reading file with fh '%ld'", fi->fh);
+    debug("requesting to read '%ld' bytes", *size);
 
     if (syscall < 0) {
         *ret = -errno;
-        DLOG("read failed with code '%d'", syscall);
+        debug("read failed with code '%d'", syscall);
     } else {
         *ret = syscall;
-        DLOG("successfully read '%d' bytes", syscall);
+        debug("successfully read '%d' bytes", syscall);
     }
 
     free(full_path);
@@ -313,13 +342,13 @@ int watdfs_write(int *argTypes, void**args) {
     char *full_path = get_full_path(short_path);
     *ret = 0;
 
-    DLOG("writing file with fh '%ld'", fi->fh);
+    debug("writing file with fh '%ld'", fi->fh);
 
     int syscall = pwrite(fi->fh, buf, *size, *off);
 
     if (syscall < 0) {
         *ret = -errno;
-        DLOG("write failed with code '%d'", syscall);
+        debug("write failed with code '%d'", syscall);
     } else {
         *ret = syscall;
     }
@@ -342,7 +371,7 @@ int watdfs_truncate(int* argTypes, void**args) {
 
     if (syscall < 0) {
         *ret = -errno;
-        DLOG("truncate failed with code '%d'", syscall);
+        debug("truncate failed with code '%d'", syscall);
 
     } else {
         *ret = syscall;
@@ -393,6 +422,7 @@ int watdfs_unlock(int* argTypes, void**args) {
 
     rw_lock_t *lock = files[std::string(short_path)].lock;
     int unlock_ret = rw_lock_unlock(lock, *mode);
+    debug("unlock return value: %d", unlock_ret);
     if (unlock_ret < 0) {
         *ret = -1;
     } else {
@@ -423,7 +453,7 @@ int main(int argc, char *argv[]) {
     int setup_code = rpcServerInit();
 
     if (setup_code < 0) {
-        DLOG("rpcServerInit failed with '%d'", setup_code);
+        debug("rpcServerInit failed with '%d'", setup_code);
         return setup_code;
     }
 
@@ -431,7 +461,7 @@ int main(int argc, char *argv[]) {
     // Important: `rpcServerInit` prints the 'export SERVER_ADDRESS' and
     // 'export SERVER_PORT' lines. Make sure you *do not* print anything
     // to *stdout* before calling `rpcServerInit`.
-    //DLOG("Initializing server...");
+    //debug("Initializing server...");
 
     int ret = 0;
     // TODO: If there is an error with `rpcServerInit`, it maybe useful to have
@@ -462,7 +492,7 @@ int main(int argc, char *argv[]) {
         ret = rpcRegister((char *)"getattr", argTypes, watdfs_getattr);
         if (ret < 0) {
             // It may be useful to have debug-printing here.
-            DLOG("rpcRegister failed to register getattr with '%d'", ret);
+            debug("rpcRegister failed to register getattr with '%d'", ret);
             return ret;
         }
     }
@@ -489,7 +519,7 @@ int main(int argc, char *argv[]) {
         // Register function types and name
         ret = rpcRegister((char *)"mknod", argTypes, watdfs_mknod);
         if (ret < 0) {
-            DLOG("rpcRegister failed to register mknod with '%d'", ret);
+            debug("rpcRegister failed to register mknod with '%d'", ret);
             return ret;
         }
     }
@@ -514,7 +544,7 @@ int main(int argc, char *argv[]) {
         ret = rpcRegister((char *)"open", argTypes, watdfs_open);
         if (ret < 0) {
             // It may be useful to have debug-printing here.
-            DLOG("rpcRegister failed to register open with '%d'", ret);
+            debug("rpcRegister failed to register open with '%d'", ret);
             return ret;
         }
     }
@@ -537,7 +567,7 @@ int main(int argc, char *argv[]) {
 
         ret = rpcRegister((char* )"release", argTypes, watdfs_release);
         if (ret < 0) {
-            DLOG("rpcRegister failed to register release with '%d'", ret);
+            debug("rpcRegister failed to register release with '%d'", ret);
         }
     }
 
@@ -558,7 +588,7 @@ int main(int argc, char *argv[]) {
 
         ret = rpcRegister((char* )"fsync", argTypes, watdfs_fsync);
         if(ret < 0) {
-            DLOG("rpcRegister failed to register fsync with '%d'", ret);
+            debug("rpcRegister failed to register fsync with '%d'", ret);
         }
     }
 
@@ -579,7 +609,7 @@ int main(int argc, char *argv[]) {
 
         ret = rpcRegister((char *)"utimensat", argTypes, watdfs_utimensat);
         if(ret < 0) {
-            DLOG("rpcRegister failed to register utimensat with '%d'", ret);
+            debug("rpcRegister failed to register utimensat with '%d'", ret);
         }
     }
 
@@ -606,7 +636,7 @@ int main(int argc, char *argv[]) {
 
         ret = rpcRegister((char* )"read", argTypes, watdfs_read);
         if(ret < 0) {
-            DLOG("rpcRegister failed to register read with '%d'", ret);
+            debug("rpcRegister failed to register read with '%d'", ret);
         }
     } 
     
@@ -634,7 +664,7 @@ int main(int argc, char *argv[]) {
 
         ret = rpcRegister((char* )"write", argTypes, watdfs_write);
         if(ret < 0) {
-            DLOG("rpcRegister failed to register write with '%d'", ret);
+            debug("rpcRegister failed to register write with '%d'", ret);
         }
     } 
 
@@ -649,7 +679,7 @@ int main(int argc, char *argv[]) {
 
         ret = rpcRegister((char* )"truncate", argTypes, watdfs_truncate);
         if(ret < 0) {
-            DLOG("rpcRegister failed to register truncate with '%d'", ret);
+            debug("rpcRegister failed to register truncate with '%d'", ret);
         }
     }
 
@@ -663,7 +693,7 @@ int main(int argc, char *argv[]) {
 
         ret = rpcRegister((char*)"lock", argTypes, watdfs_lock);
         if (ret < 0) {
-            DLOG("rpcRegister failed to register lock with '%d'", ret);
+            debug("rpcRegister failed to register lock with '%d'", ret);
         }
     }
 
@@ -674,7 +704,7 @@ int main(int argc, char *argv[]) {
     // rpcExecute could fail, so you may want to have debug-printing here, and
     // then you should return.
     if(rpc_ret < 0) {
-        DLOG("rpcExecute failed to execute with '%d'", ret);
+        debug("rpcExecute failed to execute with '%d'", ret);
     }
 
     return ret;
