@@ -24,6 +24,7 @@ INIT_LOG
 
 // Global state server_persist_dir.
 char *server_persist_dir = nullptr;
+rw_lock_t *file_lock;
 
 enum AccessType {
     READ,
@@ -168,6 +169,7 @@ int watdfs_open(int *argTypes, void **args) {
     char *full_path = get_full_path(short_path);
 
     std::string short_path_string = std::string(short_path);
+    rw_lock_lock(file_lock, RW_WRITE_LOCK);
     
     // If file is not open
     if (files.find(short_path_string) == files.end()) {
@@ -183,9 +185,11 @@ int watdfs_open(int *argTypes, void **args) {
             if (fi->flags == O_RDWR) files[short_path_string].access_type = WRITE;
         } else {
             // File is already open in write mode
+            rw_lock_unlock(file_lock, RW_WRITE_LOCK);
             if (fi->flags == O_RDWR) return -EACCES;
         }
     }
+    rw_lock_unlock(file_lock, RW_WRITE_LOCK);
 
     // Open file
     debug("full_path: '%s', flags: '%d'", full_path, fi->flags);
@@ -231,7 +235,9 @@ int watdfs_release(int *argTypes, void** args) {
 
     } else {
         *ret = syscall;
+        rw_lock_lock(file_lock, RW_WRITE_LOCK);
         files.erase(std::string(full_path));
+        rw_lock_unlock(file_lock, RW_WRITE_LOCK);
     }
 
     free(full_path);
@@ -391,6 +397,7 @@ int watdfs_lock(int *argTypes, void**args) {
 
     std::string path_string = std::string(short_path);
 
+    rw_lock_lock(file_lock, RW_WRITE_LOCK);
     if (files.find(path_string) == files.end()) {
         AccessType new_access_type = *mode == RW_READ_LOCK ? READ : WRITE;
         // Create a new struct for this file
@@ -398,6 +405,7 @@ int watdfs_lock(int *argTypes, void**args) {
         rw_lock_init(file_data.lock);
         files[path_string] = file_data;
     }
+    rw_lock_unlock(file_lock, RW_WRITE_LOCK);
 
     rw_lock_t *lock = files[path_string].lock;
 
@@ -420,8 +428,11 @@ int watdfs_unlock(int* argTypes, void**args) {
 
     int *ret = (int*)args[2];
 
+    rw_lock_lock(file_lock, RW_WRITE_LOCK);
     rw_lock_t *lock = files[std::string(short_path)].lock;
     int unlock_ret = rw_lock_unlock(lock, *mode);
+    rw_lock_unlock(file_lock, RW_WRITE_LOCK);
+
     debug("unlock return value: %d", unlock_ret);
     if (unlock_ret < 0) {
         *ret = -1;
@@ -451,6 +462,7 @@ int main(int argc, char *argv[]) {
     server_persist_dir = argv[1];
 
     int setup_code = rpcServerInit();
+    rw_lock_init(file_lock);
 
     if (setup_code < 0) {
         debug("rpcServerInit failed with '%d'", setup_code);

@@ -102,14 +102,6 @@ namespace helpers {
             return func_ret;
         }
 
-        // int lock_ret = RPC::lock_rpc(path, RW_READ_LOCK);
-        // if (lock_ret < 0) {
-        //     debug("download - Could not lock file %s on server.", path);
-        //     delete statbuf;
-        //     delete fi;
-        //     return lock_ret;
-        // }
-
         char *buffer = new char[size];
         fi->flags = O_RDONLY;
 
@@ -223,7 +215,6 @@ namespace helpers {
 
     int upload_file(char *full_path, char *path, struct state *userdata) {
         int func_ret = 0;
-  
 
         struct stat *client_buf = new struct stat;
         struct stat *server_buf = new struct stat;
@@ -645,6 +636,12 @@ int watdfs_cli_release(void *userdata, const char *path,
     int func_ret = 0;
 
     debug("Calling release on %s", full_path);
+
+    // int release_ret = RPC::release_rpc(userdata, path, fi);
+    // if (release_ret < 0) {
+    //     debug("release - could not release file on server.")
+    // }
+
 
     if ((file_access_mode & O_ACCMODE) != O_RDONLY) {
         int push_ret = helpers::upload_file(full_path, (char*)path, cast_state);
