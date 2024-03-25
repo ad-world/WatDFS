@@ -22,6 +22,9 @@ INIT_LOG
 #include <cerrno>
 #include <iostream>
 
+#define LOCK_FAIL 100000
+#define UNLOCK_FAIL 100001
+
 // Global state server_persist_dir.
 char *server_persist_dir = nullptr;
 rw_lock_t *file_lock;
@@ -185,11 +188,15 @@ int watdfs_open(int *argTypes, void **args) {
             if (fi->flags == O_RDWR) files[short_path_string].access_type = WRITE;
         } else {
             // File is already open in write mode
-            rw_lock_unlock(file_lock, RW_WRITE_LOCK);
-            if (fi->flags == O_RDWR) return -EACCES;
+            if (fi->flags == O_RDWR)  {
+                *ret = -EACCES;
+                rw_lock_unlock(file_lock, RW_WRITE_LOCK);
+                return 0;
+            }
         }
     }
     rw_lock_unlock(file_lock, RW_WRITE_LOCK);
+
 
     // Open file
     debug("full_path: '%s', flags: '%d'", full_path, fi->flags);
@@ -202,7 +209,6 @@ int watdfs_open(int *argTypes, void **args) {
         // Set file handle
         debug("syscall is: '%d'", syscall);
         fi->fh = syscall;
-        *ret = 0;
         debug("new file handle: '%ld'", fi->fh);
     }
 
@@ -411,7 +417,7 @@ int watdfs_lock(int *argTypes, void**args) {
 
     int lock_ret = rw_lock_lock(lock, *mode);
     if (lock_ret < 0) {
-        *ret = -1;
+        *ret = -LOCK_FAIL;
     } else {
         *ret = lock_ret;
     }
@@ -435,7 +441,7 @@ int watdfs_unlock(int* argTypes, void**args) {
 
     debug("unlock return value: %d", unlock_ret);
     if (unlock_ret < 0) {
-        *ret = -1;
+        *ret = -UNLOCK_FAIL;
     } else {
         *ret = unlock_ret;
     }
